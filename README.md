@@ -122,6 +122,23 @@ pnpm cli goals              # 目标进度
 ]
 ```
 
+## 密钥不要写进 config
+
+Telegram token、webhook 认证头这类东西别明文放 `config.json`——那个文件会进备份、同步网盘、被贴进 issue。存到系统 keychain：
+
+```bash
+echo "BOT:your-token" | pnpm cli secret set telegram-token
+# 输出：put this in config.json instead of the secret: "secret:telegram-token"
+```
+
+然后 config 里写引用：
+
+```json
+"notify": { "telegramBotToken": "secret:telegram-token", "telegramChatId": "12345" }
+```
+
+macOS 走 Keychain，其他系统回退到 AES-256-GCM 加密文件（0600）。
+
 ## 换模型
 
 ```bash

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import fs from 'fs';
 import { loadConfig } from './config';
 import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { ApprovalQueue } from './core/approval';
 import { GoalStore } from './core/goals';
+import { CredentialStore } from './core/credentials';
 import { buildCollectors, localCollectors } from './core/metrics';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
@@ -40,6 +42,9 @@ Usage:
   mediabot goal start <id>        Activate (needs a measured baseline)
   mediabot goal review <id>       Take a reading and score the last forecast
   mediabot metrics                Show every collectable metric
+  mediabot secret set <name>      Store a secret (reads stdin), prints its reference
+  mediabot secret rm <name>       Remove a stored secret
+  mediabot secret backend         Which backend is in use
   mediabot providers              Configured providers and their health
 
 Config: ~/.mediabot/config.json (override root with MEDIABOT_HOME)
@@ -141,6 +146,32 @@ async function main(argv: string[]): Promise<number> {
         }
       }
       return 0;
+    }
+
+    case 'secret': {
+      const store = new CredentialStore({ home: config.home });
+      const [sub, name] = rest;
+
+      if (sub === 'backend') {
+        log(store.backendName);
+        return 0;
+      }
+      if (sub === 'set') {
+        if (!name) return fail('usage: mediabot secret set <name>   (value is read from stdin)');
+        const value = fs.readFileSync(0, 'utf8').trim();
+        if (!value) return fail('no value on stdin');
+        const ref = await store.set(name, value);
+        log(`stored via ${store.backendName}`);
+        log(`put this in config.json instead of the secret: "${ref}"`);
+        return 0;
+      }
+      if (sub === 'rm') {
+        if (!name) return fail('usage: mediabot secret rm <name>');
+        await store.remove(name);
+        log(`removed ${name}`);
+        return 0;
+      }
+      return fail(`unknown secret subcommand: ${sub ?? '(none)'}`);
     }
 
     case 'metrics': {

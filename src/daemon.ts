@@ -9,6 +9,7 @@ import { EngagementRunner } from './core/engagement';
 import { GoalStore } from './core/goals';
 import { buildCollectors, localCollectors } from './core/metrics';
 import { buildNotifiers, notifyAll } from './providers/notify';
+import { CredentialStore } from './core/credentials';
 import { generateBriefing } from './core/briefing';
 
 /**
@@ -69,7 +70,17 @@ async function main(): Promise<void> {
     onError: (job, err) => log(`job ${job} failed: ${message(err)}`, 'warn'),
   });
 
-  const notifiers = buildNotifiers(config.notify ?? {});
+  // Notify config may hold `secret:<name>` references rather than raw tokens.
+  const credentials = new CredentialStore({ home: config.home });
+  const notifyConfig = config.notify ?? {};
+  const notifiers = buildNotifiers({
+    ...notifyConfig,
+    ...(await credentials.resolveAll({
+      webhookUrl: notifyConfig.webhookUrl,
+      telegramBotToken: notifyConfig.telegramBotToken,
+      telegramChatId: notifyConfig.telegramChatId,
+    })),
+  });
   const consoleUrl = `http://127.0.0.1:${port}`;
 
   /** Ping whoever is on duty. Never lets a failed ping break the caller. */

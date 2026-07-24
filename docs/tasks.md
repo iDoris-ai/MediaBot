@@ -91,10 +91,11 @@
 **验收**：登录态可保存/恢复；失效时账号置 `needs_reauth`
 **约束**：首次登录需 GUI 环境（见 architecture.md §8）
 
-### T2.2 凭证保管 `[ ]`
-**依赖**：T0.3
-**交付物**：`src/core/credentials.ts` —— OS keychain 优先，回退加密文件；DB 只存 `credential_ref`
-**验收**：单测——DB 中检索不到任何明文 token/cookie
+### T2.2 凭证保管 `[x]`
+**交付物**：`src/core/credentials.ts` —— macOS Keychain 优先，回退 AES-256-GCM 加密文件（0600）；config 里只放 `secret:<name>` 引用
+**验收**：✅ 15 测试通过，含「密钥绝不以明文出现在磁盘任何文件里」「篡改密文被 GCM 认证标签拒绝」；真实 Keychain 读写删验证通过
+**解决的真实问题**：`telegramBotToken` 和 webhook 认证头此前是明文躺在 `config.json` 里——那个文件会进备份、同步到网盘、被贴进 issue
+**关键细节**：引用解析不到时返回 `undefined` 而非引用字符串本身，否则会把字面量 `"secret:xxx"` 当 token 发出去
 
 ### T2.3 小红书 Publisher `[x]`
 **依赖**：无（改用 CLI 路线，不再依赖 T2.1/T2.2）
