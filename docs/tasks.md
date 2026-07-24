@@ -229,20 +229,18 @@
 
 ## M7 — 目标层
 
-### T7.1 指标采集 `[ ]`
-**依赖**：T4.1
-**交付物**：从 Search Console / 平台后台 / 站点分析采集 `metric`
-**验收**：能测得基线并落 `goals.baseline`
+### T7.1 指标采集 `[x]`
+**交付物**：`src/core/metrics.ts` —— CLI 型采集器（`twitter.followers` / `twitter.posts`）+ 本地采集器（发布数 / 回复数 / 信号数）
+**验收**：✅ 真实测得 followers=414、posts=551
+**诚实边界**：小红书 `whoami` 不返回粉丝数、B站只返回等级——这两个平台**报「不可用」并说明原因，绝不编数字**。采集失败返回 `null` 而非 0，因为 0 会被当成真实测量值用来定目标
 
-### T7.2 目标协商 `[ ]`
-**依赖**：T7.1, T1.1
-**交付物**：对话式确认目标（核实基线 → 商定 target/deadline/cadence）
-**验收**：产出 `goals(active)`；无实测基线不允许激活
+### T7.2 目标协商 `[x]`
+**交付物**：`src/core/goals.ts` 的 `propose / measureBaseline / activate` + CLI `mediabot goal new|measure|start`
+**验收**：✅ **无实测基线拒绝激活**（有测试断言）；无 target 同样拒绝。真实流程验证：基线 414 → 目标 500 → active
 
-### T7.3 周期复盘与回测 `[ ]`
-**依赖**：T7.2
-**交付物**：按 cadence 复盘，记录 `measured` 与上轮 `predicted`
-**验收**：能输出预测准确度；目标达成/失败自动置态
+### T7.3 周期复盘与回测 `[x]`
+**交付物**：`review()` / `progress()` + daemon `goals` 定时任务（默认周一 09:00）
+**验收**：✅ 15 测试通过。预测误差按「上一轮预测 vs 本轮实测」计算；达成自动置 done（支持升高型和降低型目标）；过期未达成置 failed；**读数不可用时如实记录 null 且不判定失败**
 
 ---
 

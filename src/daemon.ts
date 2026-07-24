@@ -6,6 +6,8 @@ import { Scheduler } from './core/scheduler';
 import { createServer } from './server/api';
 import { buildEngagement, buildProviders } from './cli';
 import { EngagementRunner } from './core/engagement';
+import { GoalStore } from './core/goals';
+import { buildCollectors, localCollectors } from './core/metrics';
 import { generateBriefing } from './core/briefing';
 
 /**
@@ -31,6 +33,8 @@ interface DaemonSchedule {
   briefing?: string;
   /** Comment polling + reply drafting. Default: every 30 minutes. */
   engage?: string;
+  /** Goal review sweep. Default: Mondays at 09:00. */
+  goals?: string;
 }
 
 async function main(): Promise<void> {
@@ -149,6 +153,22 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  scheduler.add({
+    name: 'goals',
+    cron: schedule.goals ?? '0 9 * * 1',
+    run: async () => {
+      const store = new GoalStore(db, [...buildCollectors(), ...localCollectors(db)]);
+      for (const goal of store.listActive()) {
+        const check = await store.review(goal.id);
+        const p = store.progress(goal.id);
+        log(
+          `goal ${goal.title}: ${check.measured ?? 'unavailable'}` +
+            (p.progress === null ? '' : ` (${Math.round(p.progress * 100)}% of target)`),
+        );
+      }
+    },
+  });
 
   await new Promise<void>((resolve) => {
     // Loopback only — the database holds credentials and pending outbound posts.

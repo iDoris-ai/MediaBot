@@ -3,6 +3,8 @@ import { loadConfig } from './config';
 import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { ApprovalQueue } from './core/approval';
+import { GoalStore } from './core/goals';
+import { buildCollectors, localCollectors } from './core/metrics';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
 import { ClaudeComposer } from './providers/composer/claude';
@@ -31,6 +33,12 @@ Usage:
   mediabot approve <id> [--now]   Approve a queued item, then publish if due
   mediabot reject <id> [reason]   Reject a queued item
   mediabot status                 Counts by table and recent runs
+  mediabot goals                  List goals and progress
+  mediabot goal new <metric> <target> <title>
+  mediabot goal measure <id>      Measure the baseline
+  mediabot goal start <id>        Activate (needs a measured baseline)
+  mediabot goal review <id>       Take a reading and score the last forecast
+  mediabot metrics                Show every collectable metric
   mediabot providers              Configured providers and their health
 
 Config: ~/.mediabot/config.json (override root with MEDIABOT_HOME)
@@ -132,6 +140,72 @@ async function main(argv: string[]): Promise<number> {
         }
       }
       return 0;
+    }
+
+    case 'metrics': {
+      const collectors = [...buildCollectors(), ...localCollectors(db)];
+      for (const c of collectors) {
+        const r = await c.collect();
+        log(
+          `${c.metric.padEnd(24)} ${r.value === null ? `unavailable — ${r.unavailable}` : r.value}`,
+        );
+      }
+      return 0;
+    }
+
+    case 'goals': {
+      const goals = new GoalStore(db, [...buildCollectors(), ...localCollectors(db)]);
+      const all = goals.list();
+      if (!all.length) {
+        log('no goals — mediabot goal new <metric> <target> <title>');
+        return 0;
+      }
+      for (const g of all) {
+        const p = goals.progress(g.id);
+        const pct = p.progress === null ? '—' : `${Math.round(p.progress * 100)}%`;
+        log(`${g.id}  ${g.state.padEnd(7)} ${g.metric.padEnd(22)} ${pct.padStart(5)}  ${g.title}`);
+        log(`    baseline ${g.baseline ?? '—'} → target ${g.target ?? '—'}  latest ${p.latest ?? '—'}`);
+        if (p.lastPredictionError !== null) {
+          log(`    last forecast was off by ${(p.lastPredictionError * 100).toFixed(1)}%`);
+        }
+      }
+      return 0;
+    }
+
+    case 'goal': {
+      const goals = new GoalStore(db, [...buildCollectors(), ...localCollectors(db)]);
+      const [sub, ...args] = rest;
+
+      if (sub === 'new') {
+        const [metric, target, ...title] = args;
+        if (!metric || !target) return fail('usage: mediabot goal new <metric> <target> <title>');
+        const g = goals.propose({
+          title: title.join(' ') || metric,
+          metric,
+          target: Number(target),
+        });
+        log(`${g.id} created (draft) — measure the baseline: mediabot goal measure ${g.id}`);
+        return 0;
+      }
+      if (sub === 'measure') {
+        if (!args[0]) return fail('usage: mediabot goal measure <id>');
+        const res = await goals.measureBaseline(args[0]);
+        if (res.error) return fail(`cannot measure: ${res.error}`);
+        log(`baseline ${res.goal.baseline} measured — activate: mediabot goal start ${res.goal.id}`);
+        return 0;
+      }
+      if (sub === 'start') {
+        if (!args[0]) return fail('usage: mediabot goal start <id>');
+        log(`${goals.activate(args[0]).id} active`);
+        return 0;
+      }
+      if (sub === 'review') {
+        if (!args[0]) return fail('usage: mediabot goal review <id>');
+        const c = await goals.review(args[0]);
+        log(`measured ${c.measured ?? `unavailable (${c.note})`}`);
+        return 0;
+      }
+      return fail(`unknown goal subcommand: ${sub ?? '(none)'}`);
     }
 
     case 'providers': {
