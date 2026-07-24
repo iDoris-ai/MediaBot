@@ -55,17 +55,17 @@
 **验收**：契约测试通过；产物文件内容与输入 variant 一致
 **说明**：这是让整条链路在**无任何真实凭证**下可测的关键
 
-### T1.5 审批闸门 `[ ]`
+### T1.5 审批闸门 `[x]`
 **依赖**：T0.3, T0.4
 **交付物**：`src/core/approval.ts` —— 入队（快照 + 哈希）、列表、批准、拒绝、执行前哈希校验
 **验收**：单测——批准后篡改 payload 则执行被拒绝并重新入队；拒绝不产生 post
 
-### T1.6 流水线编排 `[ ]`
+### T1.6 流水线编排 `[x]`
 **依赖**：T1.2–T1.5
 **交付物**：`src/core/pipeline.ts` —— `fetch → compose → validate → approval → publish` 全链路
 **验收**：集成测试——RSS fixture 输入，走完全链路，dry-run 产物落盘，`posts.state=published`
 
-### T1.7 CLI `[ ]`
+### T1.7 CLI `[x]`
 **依赖**：T1.6
 **交付物**：`src/cli.ts` —— `mediabot run|queue|approve <id>|reject <id>|status|providers`
 **验收**：`mediabot run --dry` 后 `mediabot queue` 能看到待审；`approve` 后产物落盘
@@ -76,7 +76,7 @@
 **验收**：对 T1.2/T1.3/T1.4 三个内置 provider 全部通过；故意破坏某个实现时能失败
 **说明**：**"外部可接入"成立与否的关键**，见 spec.md §5
 
-### T1.9 CI `[ ]`
+### T1.9 CI `[x]`
 **依赖**：T1.8
 **交付物**：`.github/workflows/ci.yml` —— typecheck + unit + conformance
 **验收**：PR 上绿灯
@@ -246,4 +246,4 @@ M0 骨架契约
       └────────────────────  ┴─▶ M6 反馈层 ─▶ M7 目标层
 ```
 
-**M1 完成即"基础流程跑通"**——全链路可在无任何平台凭证的情况下端到端验证。
+**M1 已完成（2026-07-24）——基础流程已跑通**——全链路可在无任何平台凭证的情况下端到端验证。
