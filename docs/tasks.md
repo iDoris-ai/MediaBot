@@ -96,11 +96,11 @@
 **交付物**：`src/core/credentials.ts` —— OS keychain 优先，回退加密文件；DB 只存 `credential_ref`
 **验收**：单测——DB 中检索不到任何明文 token/cookie
 
-### T2.3 小红书 Publisher `[ ]`
-**依赖**：T2.1, T2.2
-**交付物**：`src/providers/publisher/xiaohongshu.ts` —— 图文发布、话题标签、`limits` 声明
-**验收**：契约测试通过；`--dry` 模式下走完除最终点击外的全流程
-**License**：**必须自研**，social-auto-upload 无 LICENSE，仅可参考思路
+### T2.3 小红书 Publisher `[x]`
+**依赖**：无（改用 CLI 路线，不再依赖 T2.1/T2.2）
+**交付物**：`src/providers/publisher/xiaohongshu.ts` + `src/providers/engagement/xiaohongshu.ts` + `src/core/cli-adapter.ts`
+**验收**：✅ 17 测试通过（含发布与互动契约套件）；dry-run 绝不触达平台；真实二进制 checkAuth 打通
+**实现修正**：原计划用 Playwright 自研，实际发现 `xhs` CLI 已提供 `post`/`comment`/`reply`/`comments` 全套能力，改走 **② CLI 子进程**。子进程调用不构成衍生作品，license 干净。
 
 ### T2.4 公众号 Publisher `[ ]`
 **依赖**：T2.1, T2.2

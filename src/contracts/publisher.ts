@@ -14,6 +14,7 @@ export interface PublisherProvider {
   /**
    * How this provider reaches the platform. Determines what the runtime needs:
    *   api       — plain HTTP, no browser
+   *   cli       — an external command-line tool run as a subprocess
    *   browser   — Playwright + persisted cookies (first login needs a GUI)
    *   extension — routed through the MultiPost browser extension
    */
@@ -29,7 +30,7 @@ export interface PublisherProvider {
   publish(variant: DraftVariant, options: PublishOptions): Promise<PublishResult>;
 }
 
-export type PublishTransport = 'api' | 'browser' | 'extension';
+export type PublishTransport = 'api' | 'cli' | 'browser' | 'extension';
 
 export interface AuthState {
   ok: boolean;

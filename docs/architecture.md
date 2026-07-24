@@ -9,7 +9,7 @@ MediaBot **是编排层 + 能力契约，不是能力实现本身**。
 媒体运营涉及的开源能力有 30+ 个仓库（发布、视频生成、配音、趋势监控、情报聚合……）。如果把它们 fork/vendor 进来，项目会死于上游同步的维护负担。所以：
 
 - **定义四个能力槽位（provider 契约）**，外部仓库作为可插拔实现接入
-- MediaBot 自己只写：契约定义、daemon（调度/轮询/审批）、数据模型、Web UI，以及**唯一没得抄的那一块——中文平台发布器**
+- MediaBot 自己只写：契约定义、daemon（调度/轮询/审批）、数据模型、Web UI；平台能力尽量走 ①/② 接入，只有确实无路可走时才 ③ 自研
 - "兼容所有媒体"不靠我们写 40 个适配器，靠契约让社区各自补
 
 ## 二、三种接入方式
@@ -19,8 +19,8 @@ MediaBot **是编排层 + 能力契约，不是能力实现本身**。
 | 方式 | 适用 | 我们写的代码 | 典型 |
 |---|---|---|---|
 | **① MCP server** | 本身就是 MCP | **零**，仅配置 | google-trends-mcp、unifapi-agent、Dataslayer-AI |
-| **② CLI 子进程** | 有命令行入口 | 薄 adapter（~50 行） | agent-reach、yt-dlp、ffmpeg、Pixelle-Video、OpenStoryline、marketing-studio |
-| **③ 原生实现** | 无可用方案 / license 不可用 | 完整实现 | **中文平台发布器**（social-auto-upload 无 LICENSE，必须重写） |
+| **② CLI 子进程** | 有命令行入口 | 薄 adapter（~50 行） | **xhs（小红书发布+互动）**、agent-reach、yt-dlp、ffmpeg、Pixelle-Video、OpenStoryline、marketing-studio |
+| **③ 原生实现** | 无可用方案 / license 不可用 | 完整实现 | 尚无官方 API 且无可用 CLI 的平台（逐个评估） |
 
 ## 三、四个能力槽位
 
@@ -102,7 +102,7 @@ interface DraftVariant {
 interface PublisherProvider {
   id: string;
   platform: string;
-  transport: 'api' | 'browser' | 'extension';
+  transport: 'api' | 'cli' | 'browser' | 'extension';
   limits: PlatformLimits;
 
   checkAuth(): Promise<AuthState>;
@@ -124,7 +124,9 @@ interface PublishResult {
 }
 ```
 
-`transport` 字段区分三条技术路线，决定运行时需要什么（浏览器？插件？纯 HTTP？）。
+`transport` 字段区分四条技术路线，决定运行时需要什么（子进程？浏览器？插件？纯 HTTP？）。
+
+> **重要法务性质**：`cli` 这条路是**通过子进程调用外部程序**，不构成衍生作品，因此即使上游 license 缺失或不兼容 Apache-2.0，也可以合法接入。这让"license 不明的上游"从不可用变成可用——是覆盖中文平台最省力且最干净的路径。
 
 ### 3.4 EngagementProvider（反馈回环）
 
@@ -153,13 +155,14 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 
 ## 五、平台矩阵
 
-"兼容所有媒体"靠三条腿：
+"兼容所有媒体"靠四条腿：
 
 | 路线 | 平台 | 说明 |
 |---|---|---|
 | **官方 API** | X、LinkedIn、YouTube、Reddit、Mastodon、Telegram、Discord、Threads、TikTok、FB/IG | Postiz 已证明可行（借鉴接口形状，AGPL 代码不可抄） |
 | **浏览器插件复用 session** | 10+ 平台，零 API Key | MultiPost-Extension，**Apache-2.0，可直接用** |
-| **Playwright + Cookie** | 小红书、抖音、视频号、快手、B站、知乎、百家号 | **唯一真空，必须自研** |
+| **CLI 子进程** | **小红书（发布 + 评论回复，已实现）** | 通过 `xhs` CLI，复用其登录态；风险是它走逆向 API，平台变更可能失效——provider 契约正是用来隔离这个风险的 |
+| **Playwright + Cookie** | 抖音、视频号、快手、B站、知乎、百家号 | 仍需自研（逐个确认是否已有可用 CLI） |
 
 ⚠️ **公众号特例**：有官方草稿箱/素材 API（social-auto-upload 未覆盖），但要求认证服务号 + IP 白名单，个人订阅号受限。**两条路都要备**——认证号走 API，其余走浏览器。
 
@@ -192,7 +195,8 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 ### PublisherProvider
 | 能力 | 来源 | 接入方式 |
 |---|---|---|
-| 中文平台（小红书/抖音/视频号/快手/B站） | — | **③ 自研** |
+| **小红书（发布 + 互动）** | `xhs` CLI | **② CLI（已实现）** |
+| 抖音 / 视频号 / 快手 / B站 | 优先找 CLI，否则 Playwright | ②，回退 ③ |
 | 10+ 平台零配置 | `MultiPost-Extension`（Apache-2.0） | ② 插件 |
 | 西方平台官方 API | 接口形状参考 Postiz `SocialProvider` | ③ 自研（不抄代码） |
 | 公众号 | 官方草稿箱 API + 浏览器兜底 | ③ 自研 |
@@ -200,7 +204,8 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 ### EngagementProvider
 | 能力 | 来源 | 接入方式 |
 |---|---|---|
-| 评论分析 + 回复起草 | 架构参考 `Smb-Marketing-Agent` 的 Echo Agent（无 LICENSE，仅看思路） | ③ 自研 |
+| **小红书评论 / 回复** | `xhs` CLI | **② CLI（已实现）** |
+| 回复起草策略 | 架构参考 `Smb-Marketing-Agent` 的 Echo Agent（无 LICENSE，仅看思路） | ③ 自研 |
 
 ## 七、运行形态
 
