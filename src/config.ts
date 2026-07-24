@@ -45,6 +45,16 @@ export interface MediaBotConfig {
   voice?: string;
   /** Assemble a vertical slideshow video from the generated cover + narration. */
   generateVideo?: boolean;
+  /** Telegram group bot. Token may be a `secret:<name>` reference. */
+  telegram?: {
+    token: string;
+    chatId: string;
+    /** Extra groups to watch for replies; defaults to chatId. */
+    watchChatIds?: string[];
+    /** Reply when one of these words appears. */
+    keywords?: string[];
+    respondToCommands?: boolean;
+  };
   /** Blog targets: platform name → repo + collection. */
   blogs?: Record<string, {
     repo: string;

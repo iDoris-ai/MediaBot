@@ -299,11 +299,15 @@ M0 骨架契约
 **其他保证**：同名 slug 拒绝覆盖已发布文章；git push 失败时**保留已写入的文章**（删掉「清理」会丢内容），报 retryable 让人工接手
 **契约套件抓到我自己的 bug**：声明了 `maxTextLength` 却没在 `validate()` 里执行——正是这个套件存在的意义
 
-### T8.2 Telegram Publisher + Engagement `[ ]`
+### T8.2 Telegram Publisher + Engagement `[x]`
 **交付物**：`src/providers/publisher/telegram.ts` + `src/providers/engagement/telegram.ts`
 **验收**：契约测试双槽位通过；**群消息只在「被 @ / 命令 / 匹配关键词」时才回**，其余一律不回（必须有测试）；dry-run 不发送
 **参考**：`~/Dev/tools/telethon/CBots`（telethon 实现、命令分发、反广告准入）。**Bot API 走 HTTP 即可，不必引入 telethon**
 **依据**：spec.md §A.2
+**验收结果**：✅ 25 测试通过（双槽位契约 + 触发条件全覆盖）
+**核心约束已钉死**：普通群消息**不回**——只在「被 @ / 回复了 bot / 命令 / 关键词命中 / 私聊」时才进队列。**另外不回其他 bot**——两个 bot 互相 at 会无限循环
+**其他保证**：chat_id 来自配置而非生成内容（防止文案里的 chat_id 把帖子发到别的群）；Bot API 的 `ok:false`+HTTP 200 当失败处理；401 不重试（token 坏了重试没用）、403 被踢出群报 misconfigured（要人去重新加）
+**offset 策略**：只在成功拉取后前进。推进 offset 等于向 Telegram 确认收到，中途崩溃会永久丢消息——id 命名空间化让重读无害，所以宁可重读不可丢
 
 ### T8.3 小红书视频 + 视频号 profile 填充 `[ ]`
 **交付物**：把 spec.md §A.3 的实测 selector 填进 `UPLOAD_PROFILE_TEMPLATES`

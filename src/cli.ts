@@ -21,6 +21,8 @@ import { TwitterPublisher } from './providers/publisher/twitter';
 import { WeChatMpPublisher } from './providers/publisher/wechat-mp';
 import { BilibiliPublisher } from './providers/publisher/bilibili';
 import { BLOG_SCHEMAS, BlogPublisher } from './providers/publisher/blog';
+import { TelegramPublisher } from './providers/publisher/telegram';
+import { TelegramEngagement } from './providers/engagement/telegram';
 import {
   BrowserPublisher,
   UPLOAD_PROFILE_TEMPLATES,
@@ -303,12 +305,36 @@ export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
   twitter: () => new TwitterEngagement(),
 };
 
+/**
+ * Telegram needs config (token + chat), so it is built separately from the
+ * zero-config providers above. Secrets are resolved by the caller.
+ */
+export function buildTelegram(
+  cfg: NonNullable<ReturnType<typeof loadConfig>['telegram']>,
+): { publisher: PublisherProvider; engagement: EngagementProvider } {
+  return {
+    publisher: new TelegramPublisher({ token: cfg.token, chatId: cfg.chatId }),
+    engagement: new TelegramEngagement({
+      token: cfg.token,
+      chatIds: cfg.watchChatIds ?? [cfg.chatId],
+      trigger: {
+        ...(cfg.keywords ? { keywords: cfg.keywords } : {}),
+        ...(cfg.respondToCommands !== undefined ? { respondToCommands: cfg.respondToCommands } : {}),
+      },
+    }),
+  };
+}
+
 /** Engagement providers for the platforms currently targeted. */
 export function buildEngagement(config: ReturnType<typeof loadConfig>): EngagementProvider[] {
-  return config.targetPlatforms
+  const out = config.targetPlatforms
     .map((p) => REAL_ENGAGEMENT[p])
     .filter((f): f is () => EngagementProvider => Boolean(f))
     .map((f) => f());
+  if (config.targetPlatforms.includes('telegram') && config.telegram) {
+    out.push(buildTelegram(config.telegram).engagement);
+  }
+  return out;
 }
 
 /** Browser publishers, built only from profiles the user marked verified. */
@@ -386,6 +412,7 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
     ],
     composer: buildComposer(config),
     publishers: config.targetPlatforms.map((platform) => {
+      if (platform === 'telegram' && config.telegram) return buildTelegram(config.telegram).publisher;
       const real =
         REAL_PUBLISHERS[platform] ??
         buildBlogPublishers(config)[platform] ??
