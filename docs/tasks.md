@@ -85,11 +85,16 @@
 
 ## M2 — 真实发布：中文平台（唯一真空）
 
-### T2.1 浏览器会话管理 `[ ]`
-**依赖**：T0.3
-**交付物**：`src/core/browser.ts` —— Playwright 上下文管理、cookie 持久化（加密）、登录态探活
-**验收**：登录态可保存/恢复；失效时账号置 `needs_reauth`
-**约束**：首次登录需 GUI 环境（见 architecture.md §8）
+### T2.1 浏览器会话管理 `[x]`
+**交付物**：`src/core/browser.ts` —— Playwright 上下文、登录态经 T2.2 凭证层加密持久化、探活、交互式首登
+**验收**：✅ 13 测试通过；**真实 Chromium 验证 cookie 保存→新会话恢复**
+**关键设计**：
+- 登录态 = 账号完全控制权，所以走 keychain / 加密文件，不落明文 JSON（有测试遍历目录断言）
+- 探活失败返回 `{ok:false}` 而非抛异常——单平台掉线不应中断整个 tick，调用方据此置 `needs_reauth`
+- 存档损坏时丢弃重来，而不是每次 tick 都炸
+- headless 下拒绝交互式登录（扫码/短信必须有可见窗口）
+- Playwright 懒加载：不装浏览器也能跑全部测试和纯 CLI 流程
+**依赖说明**：本机 chromium 已由其他项目缓存，只新增了 npm 包
 
 ### T2.2 凭证保管 `[x]`
 **交付物**：`src/core/credentials.ts` —— macOS Keychain 优先，回退 AES-256-GCM 加密文件（0600）；config 里只放 `secret:<name>` 引用

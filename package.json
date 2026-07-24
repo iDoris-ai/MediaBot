@@ -15,7 +15,8 @@
     "daemon": "tsx src/daemon.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.10.0",
+    "playwright": "^1.61.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
