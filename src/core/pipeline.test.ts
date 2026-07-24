@@ -17,9 +17,13 @@ const FEED = `<rss><channel>
         <pubDate>Wed, 02 Jul 2026 10:00:00 GMT</pubDate></item>
 </channel></rss>`;
 
-const COMPOSED = `\`\`\`json
-{"variants":[{"platform":"dryrun","title":"Title","body":"Composed body","meta":{"tags":["x"]}}]}
-\`\`\``;
+// The delimiter format the composer now asks for.
+const COMPOSED = `<<<VARIANT platform=dryrun>>>
+TITLE: Title
+TAGS: x
+BODY:
+Composed body
+<<<END>>>`;
 
 function outDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mediabot-pipe-'));
@@ -167,7 +171,7 @@ test('composer failure records a discarded draft and rethrows', async () => {
 
   const draft = db.prepare(`SELECT state, error FROM drafts`).get() as any;
   assert.equal(draft.state, 'discarded');
-  assert.match(draft.error, /variants/);
+  assert.match(draft.error, /parseable/, 'the failure reason is recorded on the draft');
 });
 
 test('scheduled approvals wait for their time', async () => {
