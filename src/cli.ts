@@ -167,9 +167,14 @@ async function main(argv: string[]): Promise<number> {
         const missing = missingSelectors(merged);
         log(`${name.padEnd(18)} ${merged.verified ? 'verified' : 'UNVERIFIED'}`);
         log(`    upload: ${merged.uploadUrl}`);
-        if (missing.length) log(`    missing selectors: ${missing.join(', ')}`);
-        if (!merged.verified) {
-          log(`    fill selectors in config.browserProfiles.${name}, then set "verified": true`);
+        if (missing.length) {
+          log(`    missing selectors: ${missing.join(', ')}`);
+          log(`    fill them in config.browserProfiles.${name}, then set "verified": true`);
+        } else if (!merged.verified) {
+          // Distinct from missing: the selectors are present but unproven, and
+          // saying "fill them in" would send the user looking for nothing.
+          log(`    selectors present but unproven — open the page above, confirm each one,`);
+          log(`    then set config.browserProfiles.${name}.verified = true`);
         }
       }
       return 0;

@@ -309,11 +309,17 @@ M0 骨架契约
 **其他保证**：chat_id 来自配置而非生成内容（防止文案里的 chat_id 把帖子发到别的群）；Bot API 的 `ok:false`+HTTP 200 当失败处理；401 不重试（token 坏了重试没用）、403 被踢出群报 misconfigured（要人去重新加）
 **offset 策略**：只在成功拉取后前进。推进 offset 等于向 Telegram 确认收到，中途崩溃会永久丢消息——id 命名空间化让重读无害，所以宁可重读不可丢
 
-### T8.3 小红书视频 + 视频号 profile 填充 `[ ]`
+### T8.3 小红书视频 + 视频号 profile 填充 `[x]`
 **交付物**：把 spec.md §A.3 的实测 selector 填进 `UPLOAD_PROFILE_TEMPLATES`
 **接口变更**：`successIndicator` 支持 `url:` 前缀（两个平台都靠 URL 跳转判定成功，而非元素出现）
 **验收**：`mediabot profiles` 显示 selector 齐全；**`verified` 仍保持 false** —— selector 来自第三方仓库的观察，未经本人在真实登录态下验证，规则不破例
 **依据**：spec.md §A.3
+**验收结果**：✅ 364 测试全绿
+**接口扩展**：
+- `successIndicator` 支持 `url:` 前缀——**这两个平台都靠 URL 跳转确认成功，不渲染成功标记**。用等元素的方式会一直超时，然后把成功的发布记成失败
+- 新增 `loggedOutIndicator`（反向判定）——创作者后台通常是「出现登录框 = 未登录」，而不是标记已登录。两者都配时**反向的优先**：看到登录框是确凿的，而正向标记可能在鉴权完成前就渲染了
+**已填 selector**：`xiaohongshu-video`、`wechat-channels`（抖音/快手仍是占位符，我没有这两个后台的观察值）
+**`verified` 仍为 false，没有破例**——「看起来对」不等于「看着它跑通过」。一个为「看起来挺像」破例的规则就不再是规则了。`mediabot profiles` 现在会区分「缺 selector」和「selector 齐了但未验证」两种状态，后者不会再让你去找根本不缺的东西
 
 ### T8.4 Reddit 单账号 Source + Engagement `[ ]`
 **交付物**：`src/providers/source/reddit.ts`（`rdt search`）+ `src/providers/engagement/reddit.ts`（`rdt comment`）

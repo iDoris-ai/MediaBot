@@ -42,10 +42,22 @@ export interface UploadSelectors {
   bodyInput: string;
   /** Final submit control. */
   publishButton: string;
-  /** Appears only after a successful publish. */
+  /**
+   * Proof the publish landed. Either a CSS selector, or `url:<glob>` when the
+   * platform confirms by navigating instead of rendering a badge — both
+   * XiaoHongShu and Channels do the latter.
+   */
   successIndicator: string;
-  /** Optional: element proving we are logged in on the upload page. */
+  /** Optional: an element that proves we ARE logged in. */
   loggedInIndicator?: string;
+  /**
+   * Optional: an element that proves we are NOT logged in.
+   *
+   * Creator studios usually signal the negative — a login box or a "scan to
+   * log in" prompt appears — rather than marking the positive case, so this is
+   * the more reliable check in practice.
+   */
+  loggedOutIndicator?: string;
 }
 
 export interface UploadProfile {
@@ -114,13 +126,17 @@ export class BrowserPublisher implements PublisherProvider {
     const res = await this.session.check({
       url: this.profile.loginUrl,
       isLoggedIn: async (page: Page) => {
-        const sel = this.profile.selectors.loggedInIndicator;
-        if (!sel) {
-          // Without an explicit marker, treat a redirect to a login page as
-          // the signal — most creator studios do exactly that.
-          return !/login|passport|signin/i.test(page.url());
+        const { loggedOutIndicator, loggedInIndicator } = this.profile.selectors;
+        // The negative marker wins when both are present: seeing the login box
+        // is conclusive, whereas a positive marker can render before auth
+        // resolves.
+        if (loggedOutIndicator) {
+          return (await page.locator(loggedOutIndicator).count()) === 0;
         }
-        return (await page.locator(sel).count()) > 0;
+        if (loggedInIndicator) {
+          return (await page.locator(loggedInIndicator).count()) > 0;
+        }
+        return !/login|passport|signin/i.test(page.url());
       },
     });
     return res.ok ? { ok: true } : { ok: false, reason: res.reason ?? 'not logged in' };
@@ -244,7 +260,7 @@ export class BrowserPublisher implements PublisherProvider {
       // Success must be observed, not assumed: the click can be swallowed by a
       // validation toast, leaving an unpublished draft that we would otherwise
       // record as published.
-      await page.waitForSelector(s.successIndicator, { timeout: this.timeoutMs });
+      await this.waitForSuccess(page, s.successIndicator);
 
       // The web UI rarely exposes a post id; the page URL is the best anchor.
       return {
@@ -264,6 +280,15 @@ export class BrowserPublisher implements PublisherProvider {
     }
   }
 
+  /** Wait for either a URL navigation or an element, per the indicator form. */
+  private async waitForSuccess(page: Page, indicator: string): Promise<void> {
+    if (indicator.startsWith('url:')) {
+      await page.waitForURL(indicator.slice('url:'.length), { timeout: this.timeoutMs });
+      return;
+    }
+    await page.waitForSelector(indicator, { timeout: this.timeoutMs });
+  }
+
   async close(): Promise<void> {
     await this.session.close();
   }
@@ -272,15 +297,61 @@ export class BrowserPublisher implements PublisherProvider {
 /**
  * Starting-point profiles.
  *
- * Every one is `verified: false` on purpose — the selectors below are
- * placeholders, not observations. Fill them in against the live creator studio
- * and flip the flag; until then the publisher refuses rather than guessing.
+ * XiaoHongShu-video and Channels carry selectors observed from working
+ * third-party automations; Douyin and Kuaishou are still placeholders. Either
+ * way every profile ships `verified: false`, because "looks right" is not
+ * "watched it work" — and a rule that bends for selectors that merely look
+ * plausible is not a rule. Confirm against the live studio, then flip the flag.
  */
 export const UPLOAD_PROFILE_TEMPLATES: Record<string, UploadProfile> = {
+  'xiaohongshu-video': {
+    platform: 'xiaohongshu-video',
+    uploadUrl: 'https://creator.xiaohongshu.com/publish/publish?from=homepage&target=video',
+    loginUrl: 'https://creator.xiaohongshu.com',
+    selectors: {
+      fileInput: 'input[type="file"]',
+      titleInput: 'input[placeholder*="填写标题"]',
+      bodyInput: 'p[data-placeholder*="输入正文描述"]',
+      publishButton: 'button:has-text("发布")',
+      // XHS confirms by navigating, not by rendering a badge.
+      successIndicator: 'url:**/publish/success?**',
+      loggedOutIndicator: "div[class*='login-box']",
+    },
+    limits: {
+      maxTextLength: 1000,
+      maxTitleLength: 20,
+      video: { maxSeconds: 900, maxBytes: 5 * 1024 * 1024 * 1024, formats: ['mp4', 'mov'] },
+      supportsScheduling: false,
+    },
+    verified: false,
+    source: '~/.mediabot/config.json → browserProfiles.xiaohongshu-video',
+  },
+  'wechat-channels': {
+    platform: 'wechat-channels',
+    uploadUrl: 'https://channels.weixin.qq.com/platform/post/create',
+    loginUrl: 'https://channels.weixin.qq.com/platform',
+    selectors: {
+      fileInput: 'input[type="file"]',
+      bodyInput: 'div.input-editor',
+      publishButton: 'div.form-btns button:has-text("发表")',
+      successIndicator: 'url:**/post/list**',
+      // Channels shows a WeChat-Store banner or a scan prompt when signed out.
+      loggedOutIndicator: 'div.title-name:has-text("微信小店")',
+    },
+    limits: {
+      maxTextLength: 1000,
+      maxTitleLength: 22,
+      video: { maxSeconds: 1800, maxBytes: 20 * 1024 * 1024 * 1024, formats: ['mp4'] },
+      supportsScheduling: false,
+    },
+    verified: false,
+    source: '~/.mediabot/config.json → browserProfiles.wechat-channels',
+  },
   douyin: {
     platform: 'douyin',
     uploadUrl: 'https://creator.douyin.com/creator-micro/content/upload',
     loginUrl: 'https://creator.douyin.com/',
+    // Placeholders: no observed values for this platform yet.
     selectors: {
       fileInput: 'input[type="file"]',
       titleInput: '',
@@ -297,30 +368,11 @@ export const UPLOAD_PROFILE_TEMPLATES: Record<string, UploadProfile> = {
     verified: false,
     source: '~/.mediabot/config.json → browserProfiles.douyin',
   },
-  'wechat-channels': {
-    platform: 'wechat-channels',
-    uploadUrl: 'https://channels.weixin.qq.com/platform/post/create',
-    loginUrl: 'https://channels.weixin.qq.com/platform',
-    selectors: {
-      fileInput: 'input[type="file"]',
-      titleInput: '',
-      bodyInput: '',
-      publishButton: '',
-      successIndicator: '',
-    },
-    limits: {
-      maxTextLength: 1000,
-      maxTitleLength: 22,
-      video: { maxSeconds: 1800, maxBytes: 20 * 1024 * 1024 * 1024, formats: ['mp4'] },
-      supportsScheduling: false,
-    },
-    verified: false,
-    source: '~/.mediabot/config.json → browserProfiles.wechat-channels',
-  },
   kuaishou: {
     platform: 'kuaishou',
     uploadUrl: 'https://cp.kuaishou.com/article/publish/video',
     loginUrl: 'https://cp.kuaishou.com/',
+    // Placeholders: no observed values for this platform yet.
     selectors: {
       fileInput: 'input[type="file"]',
       titleInput: '',

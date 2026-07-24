@@ -9,7 +9,7 @@ import {
   missingSelectors,
   type UploadProfile,
 } from './browser-publisher';
-import { BrowserSession } from '../../core/browser';
+import type { BrowserSession } from '../../core/browser';
 import { CredentialStore } from '../../core/credentials';
 import { runConformance } from '../../testing/conformance';
 import { ProviderError, type DraftVariant } from '../../contracts';
@@ -188,12 +188,15 @@ test('checkAuth surfaces an expired session', async () => {
   assert.match(auth.reason!, /expired/);
 });
 
-test('every shipped template is unverified and lists what it still needs', () => {
+test('every shipped template is unverified and says where to edit it', () => {
+  // Some templates now carry observed selectors, so "has gaps" is no longer
+  // universal — but shipping unverified is, and that is the invariant that
+  // actually protects the account.
   for (const [name, tpl] of Object.entries(UPLOAD_PROFILE_TEMPLATES)) {
-    assert.equal(tpl.verified, false, `${name} must ship unverified — its selectors are placeholders`);
-    assert.ok(
-      missingSelectors(tpl).length > 0,
-      `${name} should report which selectors are still blank`,
+    assert.equal(
+      tpl.verified,
+      false,
+      `${name} must ship unverified until someone watches it publish`,
     );
     assert.ok(tpl.source, `${name} should say where to edit it`);
   }
@@ -227,4 +230,118 @@ test('the session is scoped per platform and account', () => {
   const a = new BrowserPublisher({ profile: profile(), account: 'one', credentials });
   const b = new BrowserPublisher({ profile: profile(), account: 'two', credentials });
   assert.notEqual((a as any).session.stateKey, (b as any).session.stateKey);
+});
+
+test('a url: success indicator waits for navigation, not an element', async () => {
+  const waited: string[] = [];
+  const page = {
+    goto: async () => {},
+    setInputFiles: async () => {},
+    fill: async () => {},
+    click: async () => {},
+    waitForURL: async (glob: string) => waited.push(`url:${glob}`),
+    waitForSelector: async (sel: string) => waited.push(`sel:${sel}`),
+    url: () => 'https://platform/publish/success?id=1',
+    locator: () => ({ count: async () => 1 }),
+    close: async () => {},
+  };
+  const session = {
+    open: async () => ({ newPage: async () => page }),
+    check: async () => ({ ok: true }),
+    close: async () => {},
+  } as unknown as BrowserSession;
+
+  const p = new BrowserPublisher({
+    profile: profile({
+      selectors: { ...profile().selectors, successIndicator: 'url:**/publish/success?**' },
+    }),
+    session,
+  });
+  await p.publish(variant(), { accountId: 'a' });
+
+  assert.deepEqual(
+    waited,
+    ['url:**/publish/success?**'],
+    'XHS and Channels confirm by navigating; waiting for an element would time out',
+  );
+});
+
+test('a plain selector indicator still waits for the element', async () => {
+  const waited: string[] = [];
+  const page = {
+    goto: async () => {},
+    setInputFiles: async () => {},
+    fill: async () => {},
+    click: async () => {},
+    waitForURL: async (g: string) => waited.push(`url:${g}`),
+    waitForSelector: async (s: string) => waited.push(`sel:${s}`),
+    url: () => 'https://platform/x',
+    locator: () => ({ count: async () => 1 }),
+    close: async () => {},
+  };
+  const session = {
+    open: async () => ({ newPage: async () => page }),
+    check: async () => ({ ok: true }),
+    close: async () => {},
+  } as unknown as BrowserSession;
+
+  await new BrowserPublisher({ profile: profile(), session }).publish(variant(), { accountId: 'a' });
+  assert.deepEqual(waited, ['sel:.published']);
+});
+
+test('a loggedOutIndicator inverts the auth check', async () => {
+  const make = (loginBoxCount: number) => {
+    const page = {
+      goto: async () => {},
+      locator: () => ({ count: async () => loginBoxCount }),
+      close: async () => {},
+      url: () => 'https://platform/',
+    };
+    return {
+      open: async () => ({ newPage: async () => page }),
+      // Delegate to the publisher's own probe rather than short-circuiting.
+      check: async (probe: any) => {
+        const ok = await probe.isLoggedIn(page);
+        return ok ? { ok: true } : { ok: false, reason: 'session expired' };
+      },
+      close: async () => {},
+    } as unknown as BrowserSession;
+  };
+
+  const withOut = profile({
+    selectors: { ...profile().selectors, loggedOutIndicator: 'div.login-box' },
+  });
+
+  assert.equal(
+    (await new BrowserPublisher({ profile: withOut, session: make(0) }).checkAuth()).ok,
+    true,
+    'no login box present means we are signed in',
+  );
+  assert.equal(
+    (await new BrowserPublisher({ profile: withOut, session: make(1) }).checkAuth()).ok,
+    false,
+    'the login box is conclusive evidence of being signed out',
+  );
+});
+
+test('the observed profiles carry real selectors but stay unverified', () => {
+  for (const name of ['xiaohongshu-video', 'wechat-channels']) {
+    const tpl = UPLOAD_PROFILE_TEMPLATES[name]!;
+    assert.deepEqual(missingSelectors(tpl), [], `${name} should have every required selector filled`);
+    assert.ok(
+      tpl.selectors.successIndicator.startsWith('url:'),
+      `${name} confirms by navigation`,
+    );
+    assert.equal(
+      tpl.verified,
+      false,
+      `${name} must still ship unverified — "looks right" is not "watched it work"`,
+    );
+  }
+});
+
+test('platforms with no observed selectors still report what they need', () => {
+  for (const name of ['douyin', 'kuaishou']) {
+    assert.ok(missingSelectors(UPLOAD_PROFILE_TEMPLATES[name]!).length > 0);
+  }
 });
