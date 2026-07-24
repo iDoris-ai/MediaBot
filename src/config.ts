@@ -47,6 +47,11 @@ export interface MediaBotConfig {
   generateVideo?: boolean;
   /** Selector profiles for browser-driven platforms; override the templates here. */
   browserProfiles?: Record<string, unknown>;
+  /**
+   * Comment on other people's posts for reach. Off by default: this is the only
+   * capability that acts on strangers' content.
+   */
+  outreach?: { enabled: boolean; dailyLimits?: Record<string, number>; perRun?: number };
   notify?: {
     webhookUrl?: string;
     webhookHeaders?: Record<string, string>;

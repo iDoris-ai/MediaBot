@@ -6,6 +6,7 @@ import { Scheduler } from './core/scheduler';
 import { createServer } from './server/api';
 import { buildEngagement, buildProviders } from './cli';
 import { EngagementRunner } from './core/engagement';
+import { OutreachRunner } from './core/outreach';
 import { GoalStore } from './core/goals';
 import { buildCollectors, localCollectors } from './core/metrics';
 import { buildNotifiers, notifyAll } from './providers/notify';
@@ -184,6 +185,48 @@ async function main(): Promise<void> {
         const sent = await runner.sendApproved();
         if (sent.sent.length) log(`engage: ${sent.sent.length} replies sent`);
         for (const f of sent.failed) log(`  reply failed ${f.approvalId}: ${f.error}`, 'warn');
+      },
+    });
+  }
+
+  if (config.outreach?.enabled && engagement.length) {
+    const outreach = new OutreachRunner(db, {
+      providers: engagement,
+      locale: config.locale,
+      ...(config.style ? { style: config.style } : {}),
+      ...(config.outreach.dailyLimits ? { dailyLimits: config.outreach.dailyLimits } : {}),
+    });
+
+    scheduler.add({
+      name: 'outreach',
+      // Hourly at most; the per-platform caps and randomised gaps do the real
+      // rate limiting inside propose().
+      cron: '45 * * * *',
+      run: async () => {
+        const targets = db
+          .prepare(
+            `SELECT id, provider_id, kind, title, url, summary, score
+               FROM source_items
+              WHERE kind = 'trend' AND fetched_at >= ?
+              ORDER BY COALESCE(score, 0) DESC LIMIT 20`,
+          )
+          .all(Date.now() - 24 * 3600_000) as any[];
+
+        const res = await outreach.propose(
+          targets.map((t) => ({
+            id: t.id,
+            providerId: t.provider_id,
+            kind: t.kind,
+            title: t.title,
+            ...(t.url ? { url: t.url } : {}),
+            ...(t.summary ? { summary: t.summary } : {}),
+          })),
+          config.outreach?.perRun ?? 3,
+        );
+        if (res.queued.length) {
+          log(`outreach: ${res.queued.length} comments awaiting approval`);
+          await ping(`${res.queued.length} 条引流评论待审批`, '在他人帖子下的评论已起草');
+        }
       },
     });
   }

@@ -160,7 +160,7 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 | 路线 | 平台 | 说明 |
 |---|---|---|
 | **官方 API** | LinkedIn、YouTube、Mastodon、Telegram、Discord、Threads、TikTok、FB/IG | Postiz 已证明可行（借鉴接口形状，AGPL 代码不可抄） |
-| **浏览器插件复用 session** | 10+ 平台，零 API Key | MultiPost-Extension，**Apache-2.0，可直接用** |
+| **浏览器插件复用 session** | 10+ 平台，零 API Key | MultiPost-Extension（Apache-2.0）。⚠️ 其 RESTful API 经 `multipost.app` 第三方服务器中转，**与「数据不出本机」冲突，未采用**；本地可行路径见 tasks.md T5.5 |
 | **CLI 子进程** | **小红书 + Twitter/X（发布 + 评论回复，均已实现）** | 通过 `xhs` / `twitter` CLI 复用既有登录态，**无需 X API 订阅**；风险是走逆向 API，平台变更可能失效——provider 契约正是用来隔离这个风险的 |
 | **CLI 子进程（部分）** | B站动态（`bili dynamic-post`，纯文本） | 仅动态，视频投稿仍需另找方案 |
 | **Playwright + Cookie** | 抖音、视频号、快手、B站、知乎、百家号 | 仍需自研（逐个确认是否已有可用 CLI） |
@@ -188,7 +188,7 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 | 浏览器录制转视频 | `browser-use/video-use` | ② CLI |
 | 剪辑 agent | `ChatCut-Inc/agent-plugin`、`calesthio/OpenMontage` | ② CLI |
 | 剪辑器底座 | `OpenCut-app/OpenCut`、`AIEraDev/clypra` | ② CLI |
-| 发布物料全流水线（录屏/Logo动画/配音/切片） | `ucsandman/marketing-studio` | ② CLI（MIT） |
+| 发布物料全流水线 | `ucsandman/marketing-studio` | ⚠️ 未采用——是交互式 Claude Code 技能集，非可编程 CLI，见 tasks.md T5.4 |
 | TTS / 配音 | MOSS-TTS、LuxTTS、KittenTTS 等 | ② CLI |
 | 配图 | 本地 flux-gen（FLUX.2 Klein 4B MLX） | ② CLI |
 | 文案 | Claude Code 本身 | 内置 |
@@ -200,7 +200,7 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 | **Twitter/X（发布 + 互动）** | `twitter` CLI | **② CLI（已实现）** |
 | B站动态（纯文本） | `bili` CLI | ② CLI（待接） |
 | 抖音 / 视频号 / 快手 / B站视频投稿 | 优先找 CLI，否则 Playwright | ②，回退 ③ |
-| 10+ 平台零配置 | `MultiPost-Extension`（Apache-2.0） | ② 插件 |
+| 10+ 平台零配置 | `MultiPost-Extension` | ⚠️ 未采用，见 tasks.md T5.5 |
 | 西方平台官方 API | 接口形状参考 Postiz `SocialProvider` | ③ 自研（不抄代码） |
 | 公众号 | 官方草稿箱 API + 浏览器兜底 | ③ 自研 |
 
