@@ -1,6 +1,6 @@
 # MediaBot 开源工具全景调研
 
-调研日期：2026-07-24。三个渠道：① 已发布博客（blog.mushroom.cv） ② 本地博客仓库历史草稿（`~/Dev/mycelium/blog`） ③ GitHub 搜索（`gh search repos`）。共发现并克隆 21 个参考仓库到 `Heinu1/research/media-boat-refs/`（未随 git 提交，仅本地参考）。
+调研日期：2026-07-24。三个渠道：① 已发布博客（blog.mushroom.cv） ② 本地博客仓库历史草稿（`~/Dev/mycelium/blog`） ③ GitHub 搜索（`gh search repos`）。共发现并克隆 21 个参考仓库到本仓库 `research/refs/`（已 gitignore，仅本地参考）。
 
 ## 一、五步框架
 
@@ -101,4 +101,4 @@ MediaBot (Apache-2.0)
 
 ## 七、参考仓库本地路径
 
-克隆在 `Heinu1/research/media-boat-refs/`（已加入 `.gitignore`，不随 Heinu1 仓库提交，仅供本地查阅源码）。共 21 个仓库，439MB → 587MB（分两批克隆）。
+克隆在本仓库 `research/refs/`（已加入 `.gitignore`，不随仓库提交，仅供本地查阅源码）。共 21 个仓库，约 586MB。

@@ -39,5 +39,5 @@ code must be written fresh. Repos under MIT/Apache-2.0 may be studied and adapte
 
 ## Local reference clones
 
-21 reference repos are cloned (not committed) under
-`../Heinu1/research/media-boat-refs/` for source-level study — not part of this repo.
+21 reference repos are cloned (not committed) under `research/refs/` for source-level
+study. They are gitignored — each carries its own `.git`, so never `git add` that tree.
