@@ -183,3 +183,29 @@ test('a single variant is never compared against itself', async () => {
   await c.compose(brief(['twitter']));
   assert.equal(found.length, 0);
 });
+
+test('hard limits are stated for platforms that enforce short fields', () => {
+  // Found by the acceptance drill: without these the model writes a plausible
+  // 30-character XHS title, validation rejects it, and that platform silently
+  // gets nothing for a model call already paid for.
+  for (const name of ['xiaohongshu', 'twitter', 'wechat-mp', 'wechat-channels']) {
+    assert.ok(PLATFORM_SHAPES[name]!.hardLimits, `${name} must state its hard limits`);
+  }
+});
+
+test('the X guidance warns that CJK counts double', () => {
+  assert.match(
+    PLATFORM_SHAPES['twitter']!.hardLimits!,
+    /2 个单位/,
+    '260 Chinese characters is ~520 weighted units and would be rejected',
+  );
+});
+
+test('hard limits appear before tone in the guidance', () => {
+  const g = shapeGuidance('xiaohongshu');
+  assert.ok(
+    g.indexOf('硬限制') < g.indexOf('语气'),
+    'breaking a hard limit costs the whole variant; missing the tone only makes it worse',
+  );
+  assert.match(g, /标题最多 20 字/);
+});

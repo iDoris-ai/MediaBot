@@ -11,6 +11,13 @@
 export interface PlatformShape {
   /** Rough target length in characters, used as guidance not a hard limit. */
   targetLength: [min: number, max: number];
+  /**
+   * Limits the platform actually enforces, stated plainly for the model.
+   *
+   * Without these the composer writes something reasonable-looking that fails
+   * validation — a wasted model call, and that platform silently gets nothing.
+   */
+  hardLimits?: string;
   /** How this platform's readers expect to be spoken to. */
   voice: string;
   /** Structural conventions. */
@@ -22,28 +29,34 @@ export interface PlatformShape {
 export const PLATFORM_SHAPES: Record<string, PlatformShape> = {
   xiaohongshu: {
     targetLength: [200, 800],
+    hardLimits: '标题最多 20 字（硬限制，超出会被拒），正文最多 1000 字',
     voice: '第一人称、口语、有具体场景和数字；像跟朋友分享踩坑经历，不像产品说明',
     structure: '开头一句抓人（痛点或反常识），中间分点讲，结尾一句行动建议或提问',
     tagging: '结尾 3-6 个话题标签，用平台里真实在用的词',
   },
   'xiaohongshu-video': {
     targetLength: [100, 400],
+    hardLimits: '标题最多 20 字（硬限制），正文最多 1000 字',
     voice: '比图文更短更直接，第一句就是钩子',
     structure: '一段话说清是什么、为什么值得看',
     tagging: '3-5 个话题标签',
   },
   'wechat-mp': {
     targetLength: [1200, 4000],
+    hardLimits: '标题最多 64 字',
     voice: '完整、有条理、可以长；读者是坐下来读完的，不是刷到的',
     structure: '有小标题分节，开头交代背景，中间展开，结尾有结论或行动项',
   },
   'wechat-channels': {
     targetLength: [50, 300],
+    hardLimits: '标题最多 22 字，正文最多 1000 字',
     voice: '极简，一两句说清',
     structure: '视频是主体，文字只是补充说明',
   },
   twitter: {
     targetLength: [100, 260],
+    // X weights CJK at two units, so a Chinese post has roughly half the room.
+    hardLimits: '最多 280 个计数单位，**中文每字算 2 个单位** —— 纯中文实际最多约 130 字',
     voice: '密度高、有观点、不客套；一句话一个信息点',
     structure: '不要开场白，直接进入内容；结论前置',
     tagging: '最多 1-2 个 hashtag，多了像营销号',
@@ -55,6 +68,7 @@ export const PLATFORM_SHAPES: Record<string, PlatformShape> = {
   },
   telegram: {
     targetLength: [50, 400],
+    hardLimits: '单条消息最多 4096 字符，标题会拼进正文一起计算',
     voice: '简短、直给；群成员是来拿信息的不是来读文章的',
     structure: '一条消息说一件事；有链接就放链接',
   },
@@ -84,9 +98,11 @@ export function shapeGuidance(platform: string): string {
   const parts = [
     `${platform}:`,
     `  长度约 ${shape.targetLength[0]}-${shape.targetLength[1]} 字`,
-    `  语气: ${shape.voice}`,
-    `  结构: ${shape.structure}`,
   ];
+  // Hard limits go first among the constraints — violating one costs the whole
+  // variant, while missing the tone is merely a worse post.
+  if (shape.hardLimits) parts.push(`  ⚠️ 硬限制: ${shape.hardLimits}`);
+  parts.push(`  语气: ${shape.voice}`, `  结构: ${shape.structure}`);
   if (shape.tagging) parts.push(`  标签: ${shape.tagging}`);
   return parts.join('\n');
 }
