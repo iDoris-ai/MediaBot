@@ -102,6 +102,12 @@
 **验收**：✅ 17 测试通过（含发布与互动契约套件）；dry-run 绝不触达平台；真实二进制 checkAuth 打通
 **实现修正**：原计划用 Playwright 自研，实际发现 `xhs` CLI 已提供 `post`/`comment`/`reply`/`comments` 全套能力，改走 **② CLI 子进程**。子进程调用不构成衍生作品，license 干净。
 
+### T2.3b Twitter/X Publisher + Engagement `[x]`
+**依赖**：无（CLI 路线）
+**交付物**：`src/providers/publisher/twitter.ts` + `src/providers/engagement/twitter.ts`
+**验收**：✅ 14 测试通过（含双槽位契约套件）；dry-run 不触达平台；真实二进制 checkAuth 打通
+**说明**：计划外新增。原本 X 被归为"③ 自研官方 API"，实际 `twitter` CLI 已有 post/reply/tweet 全套，改走 ② CLI，**且无需 X API 订阅**。CJK 权重计数（中文字符算 2）避免 280 字上限误判。
+
 ### T2.4 公众号 Publisher `[ ]`
 **依赖**：T2.1, T2.2
 **交付物**：`src/providers/publisher/wechat-mp.ts` —— 官方草稿箱 API 优先，浏览器兜底

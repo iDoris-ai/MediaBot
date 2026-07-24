@@ -159,9 +159,10 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 
 | 路线 | 平台 | 说明 |
 |---|---|---|
-| **官方 API** | X、LinkedIn、YouTube、Reddit、Mastodon、Telegram、Discord、Threads、TikTok、FB/IG | Postiz 已证明可行（借鉴接口形状，AGPL 代码不可抄） |
+| **官方 API** | LinkedIn、YouTube、Mastodon、Telegram、Discord、Threads、TikTok、FB/IG | Postiz 已证明可行（借鉴接口形状，AGPL 代码不可抄） |
 | **浏览器插件复用 session** | 10+ 平台，零 API Key | MultiPost-Extension，**Apache-2.0，可直接用** |
-| **CLI 子进程** | **小红书（发布 + 评论回复，已实现）** | 通过 `xhs` CLI，复用其登录态；风险是它走逆向 API，平台变更可能失效——provider 契约正是用来隔离这个风险的 |
+| **CLI 子进程** | **小红书 + Twitter/X（发布 + 评论回复，均已实现）** | 通过 `xhs` / `twitter` CLI 复用既有登录态，**无需 X API 订阅**；风险是走逆向 API，平台变更可能失效——provider 契约正是用来隔离这个风险的 |
+| **CLI 子进程（部分）** | B站动态（`bili dynamic-post`，纯文本） | 仅动态，视频投稿仍需另找方案 |
 | **Playwright + Cookie** | 抖音、视频号、快手、B站、知乎、百家号 | 仍需自研（逐个确认是否已有可用 CLI） |
 
 ⚠️ **公众号特例**：有官方草稿箱/素材 API（social-auto-upload 未覆盖），但要求认证服务号 + IP 白名单，个人订阅号受限。**两条路都要备**——认证号走 API，其余走浏览器。
@@ -196,7 +197,9 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 | 能力 | 来源 | 接入方式 |
 |---|---|---|
 | **小红书（发布 + 互动）** | `xhs` CLI | **② CLI（已实现）** |
-| 抖音 / 视频号 / 快手 / B站 | 优先找 CLI，否则 Playwright | ②，回退 ③ |
+| **Twitter/X（发布 + 互动）** | `twitter` CLI | **② CLI（已实现）** |
+| B站动态（纯文本） | `bili` CLI | ② CLI（待接） |
+| 抖音 / 视频号 / 快手 / B站视频投稿 | 优先找 CLI，否则 Playwright | ②，回退 ③ |
 | 10+ 平台零配置 | `MultiPost-Extension`（Apache-2.0） | ② 插件 |
 | 西方平台官方 API | 接口形状参考 Postiz `SocialProvider` | ③ 自研（不抄代码） |
 | 公众号 | 官方草稿箱 API + 浏览器兜底 | ③ 自研 |
@@ -205,6 +208,7 @@ Source 只读产出     ─┘（不入此路，只进情报简报）
 | 能力 | 来源 | 接入方式 |
 |---|---|---|
 | **小红书评论 / 回复** | `xhs` CLI | **② CLI（已实现）** |
+| **Twitter/X 回复** | `twitter` CLI | **② CLI（已实现）** |
 | 回复起草策略 | 架构参考 `Smb-Marketing-Agent` 的 Echo Agent（无 LICENSE，仅看思路） | ③ 自研 |
 
 ## 七、运行形态

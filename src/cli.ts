@@ -6,7 +6,12 @@ import { ApprovalQueue } from './core/approval';
 import { RssSourceProvider } from './providers/source/rss';
 import { ClaudeComposer } from './providers/composer/claude';
 import { DryRunPublisher } from './providers/publisher/dryrun';
+import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
+import { TwitterPublisher } from './providers/publisher/twitter';
+import { XiaohongshuEngagement } from './providers/engagement/xiaohongshu';
+import { TwitterEngagement } from './providers/engagement/twitter';
 import type { PipelineProviders } from './core/pipeline';
+import type { EngagementProvider, PublisherProvider } from './contracts';
 
 /**
  * Developer/debug entry point. The Web UI is the primary interface; this exists
@@ -145,15 +150,29 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
+/**
+ * Platforms with a real publisher. Anything else falls back to the dry-run
+ * publisher, so an unconfigured platform writes to disk rather than failing —
+ * you can always see what *would* have shipped.
+ */
+const REAL_PUBLISHERS: Record<string, () => PublisherProvider> = {
+  xiaohongshu: () => new XiaohongshuPublisher(),
+  twitter: () => new TwitterPublisher(),
+};
+
+export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
+  xiaohongshu: () => new XiaohongshuEngagement(),
+  twitter: () => new TwitterEngagement(),
+};
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: config.feeds.length ? [new RssSourceProvider({ feeds: config.feeds })] : [],
     composer: new ClaudeComposer(),
-    // Until real platform publishers are configured, everything routes to the
-    // filesystem so the loop is exercisable without any credentials.
-    publishers: config.targetPlatforms.map(
-      (platform) => new DryRunPublisher({ platform, outDir: config.outDir }),
-    ),
+    publishers: config.targetPlatforms.map((platform) => {
+      const real = REAL_PUBLISHERS[platform];
+      return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });
+    }),
   };
 }
 
