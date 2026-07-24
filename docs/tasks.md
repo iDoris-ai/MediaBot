@@ -1,0 +1,249 @@
+# MediaBot 任务拆分
+
+> 前置：[`spec.md`](spec.md)（数据结构与状态机）·[`architecture.md`](architecture.md)（契约与槽位）
+>
+> 每个任务自包含，可独立执行与验收。**验收标准必须可机器验证**（跑命令能判定通过与否），便于自动化循环推进。
+> 状态标记：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成
+
+---
+
+## M0 — 骨架与契约
+
+### T0.1 项目脚手架 `[ ]`
+**依赖**：无
+**交付物**：`package.json`（pnpm）、`tsconfig.json`（strict、CommonJS）、目录结构、`pnpm typecheck` / `pnpm test` 脚本
+**验收**：`pnpm install && pnpm typecheck` 零错误
+
+### T0.2 四个 provider 契约定义 `[ ]`
+**依赖**：T0.1
+**交付物**：`src/contracts/{source,composer,publisher,engagement,common}.ts` + `index.ts`，严格按 architecture.md §3 的签名
+**验收**：`pnpm typecheck` 通过；契约文件不含任何具体实现（纯 type/interface）
+
+### T0.3 SQLite 数据层 `[ ]`
+**依赖**：T0.1
+**交付物**：`src/core/db.ts` —— 按 spec.md §2 建全部 8 张表，WAL 模式，迁移机制（版本号 + 顺序迁移）
+**验收**：单测——空目录初始化后 8 张表齐全、索引齐全、重复初始化幂等
+
+### T0.4 幂等与哈希工具 `[ ]`
+**依赖**：T0.1
+**交付物**：`src/core/identity.ts` —— `idempotencyKey()`、`payloadHash()`、退避计算 `backoffMs(attempt)`
+**验收**：单测——相同输入产出相同键；不同输入不碰撞；退避序列为 1min/5min/25min
+
+---
+
+## M1 — 最小闭环（dry-run 打通）
+
+### T1.1 Claude 执行器 `[ ]`
+**依赖**：T0.1
+**交付物**：`src/core/claude.ts` —— spawn `claude --print --output-format stream-json --verbose`，解析 JSONL，支持 `ANTHROPIC_BASE_URL` 切后端，超时与中断
+**验收**：集成测试——给定 prompt 能拿到文本结果与 `cost_usd`；`--model` 可覆盖
+**参考**：Heinu1 `bot/src/claude/runner.ts` 是同一模式的可用实现
+
+### T1.2 SourceProvider：RSS `[ ]`
+**依赖**：T0.2, T0.3
+**交付物**：`src/providers/source/rss.ts` —— 实现 `SourceProvider`，抓 RSS/Atom
+**验收**：契约测试通过；对固定 fixture 产出稳定 `SourceItem[]`；重复抓取不产生重复行
+
+### T1.3 ComposerProvider：Claude `[ ]`
+**依赖**：T1.1, T0.2
+**交付物**：`src/providers/composer/claude.ts` —— 按 `ContentBrief` 生成多平台 `variants`，结构化输出（JSON 块）+ 解析失败兜底
+**验收**：契约测试通过；`targetPlatforms` 中每个平台都有对应 variant；解析失败时 draft 标 discarded 而非崩溃
+
+### T1.4 PublisherProvider：dry-run `[ ]`
+**依赖**：T0.2
+**交付物**：`src/providers/publisher/dryrun.ts` —— 不联网，把 variant 写入 `./out/<platform>/<id>.json/.md`，返回伪 `PublishResult`
+**验收**：契约测试通过；产物文件内容与输入 variant 一致
+**说明**：这是让整条链路在**无任何真实凭证**下可测的关键
+
+### T1.5 审批闸门 `[ ]`
+**依赖**：T0.3, T0.4
+**交付物**：`src/core/approval.ts` —— 入队（快照 + 哈希）、列表、批准、拒绝、执行前哈希校验
+**验收**：单测——批准后篡改 payload 则执行被拒绝并重新入队；拒绝不产生 post
+
+### T1.6 流水线编排 `[ ]`
+**依赖**：T1.2–T1.5
+**交付物**：`src/core/pipeline.ts` —— `fetch → compose → validate → approval → publish` 全链路
+**验收**：集成测试——RSS fixture 输入，走完全链路，dry-run 产物落盘，`posts.state=published`
+
+### T1.7 CLI `[ ]`
+**依赖**：T1.6
+**交付物**：`src/cli.ts` —— `mediabot run|queue|approve <id>|reject <id>|status|providers`
+**验收**：`mediabot run --dry` 后 `mediabot queue` 能看到待审；`approve` 后产物落盘
+
+### T1.8 Conformance Kit `[ ]`
+**依赖**：T0.2
+**交付物**：`src/testing/conformance.ts` + `pnpm test:conformance --provider <path> --slot <slot>`
+**验收**：对 T1.2/T1.3/T1.4 三个内置 provider 全部通过；故意破坏某个实现时能失败
+**说明**：**"外部可接入"成立与否的关键**，见 spec.md §5
+
+### T1.9 CI `[ ]`
+**依赖**：T1.8
+**交付物**：`.github/workflows/ci.yml` —— typecheck + unit + conformance
+**验收**：PR 上绿灯
+
+---
+
+## M2 — 真实发布：中文平台（唯一真空）
+
+### T2.1 浏览器会话管理 `[ ]`
+**依赖**：T0.3
+**交付物**：`src/core/browser.ts` —— Playwright 上下文管理、cookie 持久化（加密）、登录态探活
+**验收**：登录态可保存/恢复；失效时账号置 `needs_reauth`
+**约束**：首次登录需 GUI 环境（见 architecture.md §8）
+
+### T2.2 凭证保管 `[ ]`
+**依赖**：T0.3
+**交付物**：`src/core/credentials.ts` —— OS keychain 优先，回退加密文件；DB 只存 `credential_ref`
+**验收**：单测——DB 中检索不到任何明文 token/cookie
+
+### T2.3 小红书 Publisher `[ ]`
+**依赖**：T2.1, T2.2
+**交付物**：`src/providers/publisher/xiaohongshu.ts` —— 图文发布、话题标签、`limits` 声明
+**验收**：契约测试通过；`--dry` 模式下走完除最终点击外的全流程
+**License**：**必须自研**，social-auto-upload 无 LICENSE，仅可参考思路
+
+### T2.4 公众号 Publisher `[ ]`
+**依赖**：T2.1, T2.2
+**交付物**：`src/providers/publisher/wechat-mp.ts` —— 官方草稿箱 API 优先，浏览器兜底
+**验收**：认证号走 API 成功；非认证号自动回退浏览器路径
+
+### T2.5 抖音 / 视频号 / 快手 / B站 Publisher `[ ]`
+**依赖**：T2.1, T2.2
+**交付物**：对应 provider（视频为主）
+**验收**：各自契约测试通过；`limits.video` 声明与平台实际一致
+
+---
+
+## M3 — Web UI（主入口）
+
+### T3.1 daemon `[ ]`
+**依赖**：T1.6
+**交付物**：`src/daemon.ts` —— 调度器（cron）、轮询器、重试队列、优雅退出；launchd/systemd 单元文件
+**验收**：定时任务到点触发；重启后不重复发布（幂等键生效）
+
+### T3.2 本地 HTTP API `[ ]`
+**依赖**：T3.1
+**交付物**：`src/server/api.ts` —— 仅监听 localhost，REST：草稿/审批/日历/情报/账号/运行日志
+**验收**：非 localhost 请求被拒绝
+
+### T3.3 Web UI `[ ]`
+**依赖**：T3.2
+**交付物**：审批队列（图文预览）、发布日历、情报 feed、账号状态、运行日志
+**验收**：能在浏览器完成"看草稿 → 改 → 批准 → 定时"全流程
+
+### T3.4 IM 推送适配器（可选）`[ ]`
+**依赖**：T3.1
+**交付物**：`src/providers/notify/` —— 微信（对接 Heinu1）/ Telegram，推审批请求，支持手机端批准
+**验收**：审批入队后收到推送；回复指令能改变审批状态
+
+---
+
+## M4 — 监控层
+
+### T4.1 MCP 客户端接入层 `[ ]`
+**依赖**：T0.2
+**交付物**：`src/core/mcp.ts` —— 把任意 MCP server 包装成 `SourceProvider`
+**验收**：配置即接入，无需为每个 MCP 写代码
+
+### T4.2 Google Trends `[ ]`
+**依赖**：T4.1
+**交付物**：配置接入 `purahmanian/google-trends-mcp`
+**验收**：给定关键词返回趋势数据并落 `source_items`
+
+### T4.3 CLI 接入层 + agent-reach `[ ]`
+**依赖**：T0.2
+**交付物**：`src/core/cli-adapter.ts` 通用子进程适配器 + agent-reach provider
+**验收**：13 平台抓取可用，产出符合 `SourceItem`
+
+### T4.4 情报简报 `[ ]`
+**依赖**：T4.2, T4.3, T1.1
+**交付物**：定时聚合多 source → Claude 总结 → 简报（Web UI + 可选推送）
+**验收**：每日定时产出；只读，不触发任何发布
+
+### T4.5 竞品 / SEO / 社交监听 `[ ]`
+**依赖**：T4.1
+**交付物**：配置接入 `unifapi-agent/agents`（MCP）
+**验收**：只读；产物入 `source_items`
+
+---
+
+## M5 — 内容生产扩展
+
+### T5.1 配图 `[ ]`
+**依赖**：T0.2
+**交付物**：本地 flux-gen（FLUX.2 Klein 4B MLX）包装成 ComposerProvider
+**验收**：按 brief 产图并写入 `MediaRef`
+
+### T5.2 TTS / 配音 `[ ]`
+**依赖**：T0.2
+**交付物**：CLI 适配 MOSS-TTS / LuxTTS 等
+**验收**：文本转音频，产物可被视频 composer 消费
+
+### T5.3 短视频生成 `[ ]`
+**依赖**：T5.2, T4.3
+**交付物**：CLI 适配 `AIDC-AI/Pixelle-Video` 或 `FireRed-OpenStoryline`
+**验收**：脚本 → 成片；`limits.video` 与目标平台匹配
+
+### T5.4 发布物料流水线 `[ ]`
+**依赖**：T0.2
+**交付物**：CLI 适配 `ucsandman/marketing-studio`（MIT）
+**验收**：产出封面 / 切片 / OG 图
+
+### T5.5 MultiPost 插件通道 `[ ]`
+**依赖**：T0.2
+**交付物**：接入 `MultiPost-Extension`（Apache-2.0）作为 `transport='extension'` 的 publisher
+**验收**：一次投递覆盖 10+ 平台
+
+---
+
+## M6 — 反馈层
+
+### T6.1 评论轮询 `[ ]`
+**依赖**：T2.x, T3.1
+**交付物**：`EngagementProvider` 实现，以 `platform_post_id` 为锚点拉评论
+**验收**：新评论入 `comments(new)`，重复轮询不产生重复行
+
+### T6.2 回复起草 + 审批 `[ ]`
+**依赖**：T6.1, T1.5
+**交付物**：Claude 起草回复 → 复用审批闸门（`kind='reply'`）
+**验收**：批准后发出并置 `replied`；拒绝不发送
+
+### T6.3 outbound 评论（引流）`[ ]`
+**依赖**：T6.2
+**交付物**：主动在他人内容下评论，含速率限制与质量门槛
+**验收**：每平台日限生效；随机间隔而非固定节奏
+
+---
+
+## M7 — 目标层
+
+### T7.1 指标采集 `[ ]`
+**依赖**：T4.1
+**交付物**：从 Search Console / 平台后台 / 站点分析采集 `metric`
+**验收**：能测得基线并落 `goals.baseline`
+
+### T7.2 目标协商 `[ ]`
+**依赖**：T7.1, T1.1
+**交付物**：对话式确认目标（核实基线 → 商定 target/deadline/cadence）
+**验收**：产出 `goals(active)`；无实测基线不允许激活
+
+### T7.3 周期复盘与回测 `[ ]`
+**依赖**：T7.2
+**交付物**：按 cadence 复盘，记录 `measured` 与上轮 `predicted`
+**验收**：能输出预测准确度；目标达成/失败自动置态
+
+---
+
+## 里程碑依赖图
+
+```
+M0 骨架契约
+ └─▶ M1 最小闭环（dry-run，无凭证可测）
+      ├─▶ M2 中文平台发布 ──┐
+      ├─▶ M3 daemon + Web UI ┤
+      ├─▶ M4 监控层 ─────────┤
+      ├─▶ M5 内容生产扩展 ────┤
+      └────────────────────  ┴─▶ M6 反馈层 ─▶ M7 目标层
+```
+
+**M1 完成即"基础流程跑通"**——全链路可在无任何平台凭证的情况下端到端验证。
