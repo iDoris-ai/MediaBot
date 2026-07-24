@@ -45,6 +45,8 @@ export interface MediaBotConfig {
   voice?: string;
   /** Assemble a vertical slideshow video from the generated cover + narration. */
   generateVideo?: boolean;
+  /** Reddit: ONE openly-attributed account. Multi-persona is not supported. */
+  reddit?: { subreddits?: string[]; sort?: string; time?: string };
   /** Telegram group bot. Token may be a `secret:<name>` reference. */
   telegram?: {
     token: string;

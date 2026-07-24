@@ -42,6 +42,9 @@ export const DEFAULT_DAILY_LIMITS: Record<string, number> = {
   twitter: 20,
   xiaohongshu: 10,
   bilibili: 10,
+  // Reddit communities react to marketing far more sharply than the others,
+  // and moderators act on patterns rather than individual posts.
+  reddit: 5,
 };
 
 export interface OutreachResult {
@@ -197,6 +200,7 @@ function platformOf(item: SourceItem): string | null {
   if (providerId.startsWith('xhs')) return 'xiaohongshu';
   if (providerId.startsWith('twitter')) return 'twitter';
   if (providerId.startsWith('bili')) return 'bilibili';
+  if (providerId.startsWith('reddit')) return 'reddit';
   return null;
 }
 

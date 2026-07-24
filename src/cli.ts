@@ -10,6 +10,7 @@ import { buildCollectors, localCollectors } from './core/metrics';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
 import { McpSource } from './providers/source/mcp';
+import { RedditSource } from './providers/source/reddit';
 import { ClaudeComposer } from './providers/composer/claude';
 import { FluxImageComposer } from './providers/composer/flux-image';
 import { TtsComposer } from './providers/composer/tts';
@@ -23,6 +24,7 @@ import { BilibiliPublisher } from './providers/publisher/bilibili';
 import { BLOG_SCHEMAS, BlogPublisher } from './providers/publisher/blog';
 import { TelegramPublisher } from './providers/publisher/telegram';
 import { TelegramEngagement } from './providers/engagement/telegram';
+import { RedditEngagement } from './providers/engagement/reddit';
 import {
   BrowserPublisher,
   UPLOAD_PROFILE_TEMPLATES,
@@ -308,6 +310,7 @@ const REAL_PUBLISHERS: Record<string, () => PublisherProvider> = {
 export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
   xiaohongshu: () => new XiaohongshuEngagement(),
   twitter: () => new TwitterEngagement(),
+  reddit: () => new RedditEngagement(),
 };
 
 /**
@@ -399,6 +402,16 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
       ...config.searchPlatforms.map(
         (p) => new CliSearchSource(p as SearchPlatform, { keywords: config.keywords }),
       ),
+      ...(config.reddit
+        ? [
+            new RedditSource({
+              keywords: config.keywords,
+              ...(config.reddit.subreddits ? { subreddits: config.reddit.subreddits } : {}),
+              ...(config.reddit.sort ? { sort: config.reddit.sort as any } : {}),
+              ...(config.reddit.time ? { time: config.reddit.time as any } : {}),
+            }),
+          ]
+        : []),
       ...config.mcpSources.map(
         (m) =>
           new McpSource({

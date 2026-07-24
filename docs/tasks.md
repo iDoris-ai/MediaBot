@@ -321,10 +321,14 @@ M0 骨架契约
 **已填 selector**：`xiaohongshu-video`、`wechat-channels`（抖音/快手仍是占位符，我没有这两个后台的观察值）
 **`verified` 仍为 false，没有破例**——「看起来对」不等于「看着它跑通过」。一个为「看起来挺像」破例的规则就不再是规则了。`mediabot profiles` 现在会区分「缺 selector」和「selector 齐了但未验证」两种状态，后者不会再让你去找根本不缺的东西
 
-### T8.4 Reddit 单账号 Source + Engagement `[ ]`
+### T8.4 Reddit 单账号 Source + Engagement `[x]`
 **交付物**：`src/providers/source/reddit.ts`（`rdt search`）+ `src/providers/engagement/reddit.ts`（`rdt comment`）
 **验收**：契约测试通过；**不实现 upvote**（即使单账号，自动投票仍属 vote manipulation）；日限默认 5，低于其他平台
 **范围**：单个公开属于本人/组织的账号。多人设、自动点赞背书**不做**，理由见 acceptance.md §3
+**验收结果**：✅ 18 测试通过；真实 Reddit 抓取验证（r/selfhosted）
+**没实现 upvote，并有测试断言它不存在**——`rdt` 有投票能力，这里故意不接。自动投票即使单账号也属 vote manipulation，而且是 Reddit 反作弊最容易识别的行为
+**日限设为 5**，低于其他平台一半——Reddit 社区对营销的反应比别处激烈得多，且版主是按模式封人而非按单条内容
+**技术细节**：`rdt read` 返回嵌套 Listing，评论树要递归展开；`more` 类型是「还有 N 条」的占位符不是评论；Reddit id 带 `t1_` 类型前缀需要剥掉
 
 ### T8.5 内容形态适配 `[ ]`
 **交付物**：composer prompt 按平台注入形态要求（小红书重钩子和标签、公众号重结构、blog 重深度、X 重密度、Telegram 重简短）
