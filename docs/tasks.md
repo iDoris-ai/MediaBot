@@ -33,23 +33,23 @@
 
 ## M1 — 最小闭环（dry-run 打通）
 
-### T1.1 Claude 执行器 `[ ]`
+### T1.1 Claude 执行器 `[x]`
 **依赖**：T0.1
 **交付物**：`src/core/claude.ts` —— spawn `claude --print --output-format stream-json --verbose`，解析 JSONL，支持 `ANTHROPIC_BASE_URL` 切后端，超时与中断
 **验收**：集成测试——给定 prompt 能拿到文本结果与 `cost_usd`；`--model` 可覆盖
 **参考**：Heinu1 `bot/src/claude/runner.ts` 是同一模式的可用实现
 
-### T1.2 SourceProvider：RSS `[ ]`
+### T1.2 SourceProvider：RSS `[x]`
 **依赖**：T0.2, T0.3
 **交付物**：`src/providers/source/rss.ts` —— 实现 `SourceProvider`，抓 RSS/Atom
 **验收**：契约测试通过；对固定 fixture 产出稳定 `SourceItem[]`；重复抓取不产生重复行
 
-### T1.3 ComposerProvider：Claude `[ ]`
+### T1.3 ComposerProvider：Claude `[x]`
 **依赖**：T1.1, T0.2
 **交付物**：`src/providers/composer/claude.ts` —— 按 `ContentBrief` 生成多平台 `variants`，结构化输出（JSON 块）+ 解析失败兜底
 **验收**：契约测试通过；`targetPlatforms` 中每个平台都有对应 variant；解析失败时 draft 标 discarded 而非崩溃
 
-### T1.4 PublisherProvider：dry-run `[ ]`
+### T1.4 PublisherProvider：dry-run `[x]`
 **依赖**：T0.2
 **交付物**：`src/providers/publisher/dryrun.ts` —— 不联网，把 variant 写入 `./out/<platform>/<id>.json/.md`，返回伪 `PublishResult`
 **验收**：契约测试通过；产物文件内容与输入 variant 一致
@@ -70,7 +70,7 @@
 **交付物**：`src/cli.ts` —— `mediabot run|queue|approve <id>|reject <id>|status|providers`
 **验收**：`mediabot run --dry` 后 `mediabot queue` 能看到待审；`approve` 后产物落盘
 
-### T1.8 Conformance Kit `[ ]`
+### T1.8 Conformance Kit `[x]`
 **依赖**：T0.2
 **交付物**：`src/testing/conformance.ts` + `pnpm test:conformance --provider <path> --slot <slot>`
 **验收**：对 T1.2/T1.3/T1.4 三个内置 provider 全部通过；故意破坏某个实现时能失败
