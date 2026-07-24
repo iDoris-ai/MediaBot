@@ -9,22 +9,22 @@
 
 ## M0 — 骨架与契约
 
-### T0.1 项目脚手架 `[ ]`
+### T0.1 项目脚手架 `[x]`
 **依赖**：无
 **交付物**：`package.json`（pnpm）、`tsconfig.json`（strict、CommonJS）、目录结构、`pnpm typecheck` / `pnpm test` 脚本
 **验收**：`pnpm install && pnpm typecheck` 零错误
 
-### T0.2 四个 provider 契约定义 `[ ]`
+### T0.2 四个 provider 契约定义 `[x]`
 **依赖**：T0.1
 **交付物**：`src/contracts/{source,composer,publisher,engagement,common}.ts` + `index.ts`，严格按 architecture.md §3 的签名
 **验收**：`pnpm typecheck` 通过；契约文件不含任何具体实现（纯 type/interface）
 
-### T0.3 SQLite 数据层 `[ ]`
+### T0.3 SQLite 数据层 `[x]`
 **依赖**：T0.1
 **交付物**：`src/core/db.ts` —— 按 spec.md §2 建全部 8 张表，WAL 模式，迁移机制（版本号 + 顺序迁移）
 **验收**：单测——空目录初始化后 8 张表齐全、索引齐全、重复初始化幂等
 
-### T0.4 幂等与哈希工具 `[ ]`
+### T0.4 幂等与哈希工具 `[x]`
 **依赖**：T0.1
 **交付物**：`src/core/identity.ts` —— `idempotencyKey()`、`payloadHash()`、退避计算 `backoffMs(attempt)`
 **验收**：单测——相同输入产出相同键；不同输入不碰撞；退避序列为 1min/5min/25min

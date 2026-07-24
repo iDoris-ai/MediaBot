@@ -1,0 +1,35 @@
+{
+  "name": "mediabot",
+  "version": "0.0.1",
+  "description": "Media operations agent on Claude Code — goal, content, publish, feedback, monitoring",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "mediabot": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test:conformance": "tsx src/testing/run-conformance.ts",
+    "cli": "tsx src/cli.ts",
+    "daemon": "tsx src/daemon.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}
