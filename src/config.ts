@@ -39,6 +39,8 @@ export interface MediaBotConfig {
   goal?: string;
   /** Generate a cover image locally for each draft. */
   generateImages?: boolean;
+  /** Selector profiles for browser-driven platforms; override the templates here. */
+  browserProfiles?: Record<string, unknown>;
   notify?: {
     webhookUrl?: string;
     webhookHeaders?: Record<string, string>;

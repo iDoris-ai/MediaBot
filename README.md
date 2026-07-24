@@ -101,9 +101,20 @@ pnpm cli goals              # 目标进度
 | X / Twitter | 文+图 | ✅ | `twitter` CLI | twitter-cli + 登录 |
 | 微信公众号 | **草稿** | — | 官方 API | `WECHAT_APP_ID` / `WECHAT_APP_SECRET` |
 | B站 | 纯文本动态 | — | `bili` CLI | bili-cli + `bili login` |
+| 抖音 / 视频号 / 快手 | 视频 | — | Playwright | **selector 需实测填写**，见下 |
 | dry-run | 写本地文件 | — | 内置 | 无 |
 
 **公众号只建草稿，不群发。** 公众号每天群发次数极少且不可撤回，最后一步由你在后台点发送。
+
+### 抖音 / 视频号 / 快手需要先填 selector
+
+这三个平台没有 API 也没有 CLI，只能驱动网页。创作者后台的 DOM 经常变，所以 selector 是**配置**不是代码：
+
+```bash
+pnpm cli profiles      # 看每个平台还缺哪些 selector
+```
+
+打开对应的上传页，用开发者工具找到各个控件，填进 `config.browserProfiles.<平台>`，确认能跑通后把 `"verified": true` 打开。**没验证过的 profile 会拒绝发布**——乱猜的 selector 不会干净失败，它会点错按钮或留下半填的草稿。
 
 **没配置的平台自动落到 dry-run**，内容写到 `~/.mediabot/out/`，你能看到「本来会发出去什么」。
 

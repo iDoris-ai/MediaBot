@@ -18,6 +18,12 @@ import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
 import { TwitterPublisher } from './providers/publisher/twitter';
 import { WeChatMpPublisher } from './providers/publisher/wechat-mp';
 import { BilibiliPublisher } from './providers/publisher/bilibili';
+import {
+  BrowserPublisher,
+  UPLOAD_PROFILE_TEMPLATES,
+  missingSelectors,
+  type UploadProfile,
+} from './providers/publisher/browser-publisher';
 import { XiaohongshuEngagement } from './providers/engagement/xiaohongshu';
 import { TwitterEngagement } from './providers/engagement/twitter';
 import type { PipelineProviders } from './core/pipeline';
@@ -45,6 +51,7 @@ Usage:
   mediabot secret set <name>      Store a secret (reads stdin), prints its reference
   mediabot secret rm <name>       Remove a stored secret
   mediabot secret backend         Which backend is in use
+  mediabot profiles               Browser upload profiles and what they still need
   mediabot providers              Configured providers and their health
 
 Config: ~/.mediabot/config.json (override root with MEDIABOT_HOME)
@@ -143,6 +150,21 @@ async function main(argv: string[]): Promise<number> {
         log('\nrecent runs:');
         for (const r of runs) {
           log(`  ${new Date(r.started_at).toISOString()}  ${r.kind.padEnd(12)} ${r.state}  ${r.detail ?? ''}`);
+        }
+      }
+      return 0;
+    }
+
+    case 'profiles': {
+      const overrides = (config.browserProfiles ?? {}) as Record<string, Partial<UploadProfile>>;
+      for (const [name, tpl] of Object.entries(UPLOAD_PROFILE_TEMPLATES)) {
+        const merged = { ...tpl, ...(overrides[name] ?? {}) } as UploadProfile;
+        const missing = missingSelectors(merged);
+        log(`${name.padEnd(18)} ${merged.verified ? 'verified' : 'UNVERIFIED'}`);
+        log(`    upload: ${merged.uploadUrl}`);
+        if (missing.length) log(`    missing selectors: ${missing.join(', ')}`);
+        if (!merged.verified) {
+          log(`    fill selectors in config.browserProfiles.${name}, then set "verified": true`);
         }
       }
       return 0;
@@ -286,6 +308,20 @@ export function buildEngagement(config: ReturnType<typeof loadConfig>): Engageme
     .map((f) => f());
 }
 
+/** Browser publishers, built only from profiles the user marked verified. */
+export function buildBrowserPublishers(
+  config: ReturnType<typeof loadConfig>,
+): Record<string, () => PublisherProvider> {
+  const overrides = (config.browserProfiles ?? {}) as Record<string, Partial<UploadProfile>>;
+  const out: Record<string, () => PublisherProvider> = {};
+
+  for (const [name, tpl] of Object.entries(UPLOAD_PROFILE_TEMPLATES)) {
+    const profile = { ...tpl, ...(overrides[name] ?? {}) } as UploadProfile;
+    out[name] = () => new BrowserPublisher({ profile });
+  }
+  return out;
+}
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: [
@@ -316,7 +352,7 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
         })
       : new ClaudeComposer(),
     publishers: config.targetPlatforms.map((platform) => {
-      const real = REAL_PUBLISHERS[platform];
+      const real = REAL_PUBLISHERS[platform] ?? buildBrowserPublishers(config)[platform];
       return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });
     }),
   };
