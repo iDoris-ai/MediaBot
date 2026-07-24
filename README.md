@@ -83,6 +83,7 @@ pnpm daemon      # 常驻进程 + 审批控制台 http://127.0.0.1:7788
 或者用命令行：
 
 ```bash
+pnpm drill                  # 端到端验收演练（dry-run，安全重跑）
 pnpm cli providers          # 各 provider 健康状况
 pnpm cli run                # 抓取 → 生成 → 进审批队列
 pnpm cli queue              # 看待审内容
@@ -97,11 +98,16 @@ pnpm cli goals              # 目标进度
 
 | 平台 | 发布 | 评论回复 | 走什么 | 需要装 |
 |---|---|---|---|---|
-| 小红书 | 图文 | ✅ | `xhs` CLI | [xhs-cli](https://github.com/) + `xhs login` |
+| 小红书 | 图文 | ✅ | `xhs` CLI | xhs-cli + `xhs login` |
+| 小红书 | **视频** | ✅ | Playwright | selector 已填，**待实测确认** |
 | X / Twitter | 文+图 | ✅ | `twitter` CLI | twitter-cli + 登录 |
 | 微信公众号 | **草稿** | — | 官方 API | `WECHAT_APP_ID` / `WECHAT_APP_SECRET` |
+| 微信视频号 | 视频 | — | Playwright | selector 已填，**待实测确认** |
+| Telegram | 群定时发 | ✅ 条件触发 | Bot API | bot token + chat id |
+| Reddit | 评论 | ✅ | `rdt` CLI | rdt-cli + `rdt login` |
+| 技术 blog / 生活 blog | markdown | — | 写文件 + git | 本地仓库路径 |
 | B站 | 纯文本动态 | — | `bili` CLI | bili-cli + `bili login` |
-| 抖音 / 视频号 / 快手 | 视频 | — | Playwright | **selector 需实测填写**，见下 |
+| 抖音 / 快手 | 视频 | — | Playwright | selector 待填 |
 | dry-run | 写本地文件 | — | 内置 | 无 |
 
 **公众号只建草稿，不群发。** 公众号每天群发次数极少且不可撤回，最后一步由你在后台点发送。
@@ -115,6 +121,38 @@ pnpm cli profiles      # 看每个平台还缺哪些 selector
 ```
 
 打开对应的上传页，用开发者工具找到各个控件，填进 `config.browserProfiles.<平台>`，确认能跑通后把 `"verified": true` 打开。**没验证过的 profile 会拒绝发布**——乱猜的 selector 不会干净失败，它会点错按钮或留下半填的草稿。
+
+### Telegram 群机器人
+
+```json
+"telegram": {
+  "token": "secret:telegram-token",
+  "chatId": "-1001234567890",
+  "keywords": ["价格", "怎么装"]
+}
+```
+
+**群里不会逢消息必回**——只在被 @、回复了 bot、命令、或命中关键词时才起草回复。逢消息必回的机器人一天就会被踢出群。
+
+### Reddit
+
+```json
+"reddit": { "subreddits": ["selfhosted", "LocalLLaMA"] }
+```
+
+**一个公开属于你的账号**，不做多人设、不做自动点赞——那些是 vote manipulation，会让关联账号一起被封。日限默认 5 条，是其他平台的一半。
+
+### Blog
+
+```json
+"blogs": {
+  "blog-tech": { "repo": "/path/to/blog", "contentDir": "src/content/blog", "schema": "blog",
+                 "urlPattern": "https://blog.example/blog/{slug}/" },
+  "blog-life": { "repo": "/path/to/blog", "contentDir": "src/content/my", "schema": "my" }
+}
+```
+
+**blog 是唯一审批后全自动完成的通道**——git 可撤回，误发一篇是 `git revert`，误发一条小红书是永久的。
 
 **没配置的平台自动落到 dry-run**，内容写到 `~/.mediabot/out/`，你能看到「本来会发出去什么」。
 
