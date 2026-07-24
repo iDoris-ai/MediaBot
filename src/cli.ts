@@ -7,6 +7,7 @@ import { GoalStore } from './core/goals';
 import { buildCollectors, localCollectors } from './core/metrics';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
+import { McpSource } from './providers/source/mcp';
 import { ClaudeComposer } from './providers/composer/claude';
 import { FluxImageComposer } from './providers/composer/flux-image';
 import { ChainComposer } from './providers/composer/chain';
@@ -260,6 +261,21 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
       ...(config.feeds.length ? [new RssSourceProvider({ feeds: config.feeds })] : []),
       ...config.searchPlatforms.map(
         (p) => new CliSearchSource(p as SearchPlatform, { keywords: config.keywords }),
+      ),
+      ...config.mcpSources.map(
+        (m) =>
+          new McpSource({
+            id: m.id,
+            ...(m.name ? { name: m.name } : {}),
+            ...(m.kind ? { kind: m.kind } : {}),
+            server: {
+              command: m.command,
+              ...(m.args ? { args: m.args } : {}),
+              ...(m.env ? { env: m.env } : {}),
+            },
+            tool: m.tool,
+            keywords: config.keywords,
+          }),
       ),
     ],
     composer: config.generateImages

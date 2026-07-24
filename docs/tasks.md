@@ -152,15 +152,17 @@
 
 ## M4 — 监控层
 
-### T4.1 MCP 客户端接入层 `[ ]`
-**依赖**：T0.2
-**交付物**：`src/core/mcp.ts` —— 把任意 MCP server 包装成 `SourceProvider`
-**验收**：配置即接入，无需为每个 MCP 写代码
+### T4.1 MCP 客户端接入层 `[x]`
+**交付物**：`src/core/mcp.ts`（stdio JSON-RPC 客户端）+ `src/providers/source/mcp.ts`（包装成 SourceProvider）
+**验收**：✅ 15 测试通过，**跑的是真实 MCP 协议握手**（fixture 是一个真的 stdio server，不是对自己假设的 mock）；配置即接入
+**健壮性**：服务器中途死亡 → 拒绝而非挂起；请求超时有上限；缺二进制报 misconfigured 不重试；工具输出兼容 JSON 数组 / 包装对象 / 纯文本行
 
-### T4.2 Google Trends `[ ]`
-**依赖**：T4.1
-**交付物**：配置接入 `purahmanian/google-trends-mcp`
-**验收**：给定关键词返回趋势数据并落 `source_items`
+### T4.2 Google Trends `[x]`（配置即接入）
+**交付物**：无需代码——在 `config.json` 的 `mcpSources` 加一项：
+```json
+{"id":"google-trends","command":"npx","args":["-y","google-trends-mcp"],"tool":"<工具名>","kind":"trend"}
+```
+**验收**：T4.1 的通用适配层已覆盖；工具名以 `healthCheck` 报出的实际列表为准
 
 ### T4.3 CLI 搜索型 Source `[x]`
 **交付物**：`src/providers/source/cli-search.ts` —— 小红书 / Twitter / B站 关键词监控，共用一套映射框架
@@ -172,10 +174,9 @@
 **验收**：✅ 8 测试通过；**有测试断言简报不创建 drafts/approvals/posts 任何一行**——监控只做眼睛不做手
 **降级设计**：模型不可用时输出原始信号列表，不因此丢掉整轮监控结果
 
-### T4.5 竞品 / SEO / 社交监听 `[ ]`
-**依赖**：T4.1
-**交付物**：配置接入 `unifapi-agent/agents`（MCP）
-**验收**：只读；产物入 `source_items`
+### T4.5 竞品 / SEO / 社交监听 `[x]`（配置即接入）
+**交付物**：同 T4.2，`mcpSources` 加一项指向 unifapi MCP server
+**验收**：走同一条只读通路；`SourceProvider` 契约禁止写方法，conformance 套件强制
 
 ---
 

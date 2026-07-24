@@ -10,6 +10,18 @@ import path from 'path';
  * tests and for running several isolated instances.
  */
 
+export interface McpSourceConfig {
+  id: string;
+  name?: string;
+  /** Server command, e.g. "npx". */
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** Tool to call for each keyword. */
+  tool: string;
+  kind?: 'trend' | 'news' | 'competitor';
+}
+
 export interface MediaBotConfig {
   home: string;
   dbFile: string;
@@ -19,6 +31,8 @@ export interface MediaBotConfig {
   searchPlatforms: string[];
   /** Keywords the monitoring layer watches. */
   keywords: string[];
+  /** MCP servers exposed as read-only sources — config, not code. */
+  mcpSources: McpSourceConfig[];
   targetPlatforms: string[];
   locale: string;
   style?: string;
@@ -41,6 +55,7 @@ const DEFAULTS: Omit<MediaBotConfig, 'home' | 'dbFile' | 'outDir'> = {
   feeds: [],
   searchPlatforms: [],
   keywords: [],
+  mcpSources: [],
   targetPlatforms: ['dryrun'],
   locale: 'zh-CN',
 };
