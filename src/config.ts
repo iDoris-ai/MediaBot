@@ -45,6 +45,15 @@ export interface MediaBotConfig {
   voice?: string;
   /** Assemble a vertical slideshow video from the generated cover + narration. */
   generateVideo?: boolean;
+  /** Blog targets: platform name → repo + collection. */
+  blogs?: Record<string, {
+    repo: string;
+    contentDir: string;
+    schema?: 'blog' | 'my';
+    urlPattern?: string;
+    commit?: boolean;
+    push?: boolean;
+  }>;
   /** Selector profiles for browser-driven platforms; override the templates here. */
   browserProfiles?: Record<string, unknown>;
   /**

@@ -20,6 +20,7 @@ import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
 import { TwitterPublisher } from './providers/publisher/twitter';
 import { WeChatMpPublisher } from './providers/publisher/wechat-mp';
 import { BilibiliPublisher } from './providers/publisher/bilibili';
+import { BLOG_SCHEMAS, BlogPublisher } from './providers/publisher/blog';
 import {
   BrowserPublisher,
   UPLOAD_PROFILE_TEMPLATES,
@@ -340,6 +341,26 @@ export function buildComposer(config: ReturnType<typeof loadConfig>) {
     : new ClaudeComposer();
 }
 
+/** Blog publishers, one per configured target. */
+export function buildBlogPublishers(
+  config: ReturnType<typeof loadConfig>,
+): Record<string, () => PublisherProvider> {
+  const out: Record<string, () => PublisherProvider> = {};
+  for (const [platform, cfg] of Object.entries(config.blogs ?? {})) {
+    out[platform] = () =>
+      new BlogPublisher({
+        platform,
+        repo: cfg.repo,
+        contentDir: cfg.contentDir,
+        schema: BLOG_SCHEMAS[cfg.schema ?? 'blog']!,
+        ...(cfg.urlPattern ? { urlPattern: cfg.urlPattern } : {}),
+        ...(cfg.commit !== undefined ? { commit: cfg.commit } : {}),
+        ...(cfg.push !== undefined ? { push: cfg.push } : {}),
+      });
+  }
+  return out;
+}
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: [
@@ -365,7 +386,10 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
     ],
     composer: buildComposer(config),
     publishers: config.targetPlatforms.map((platform) => {
-      const real = REAL_PUBLISHERS[platform] ?? buildBrowserPublishers(config)[platform];
+      const real =
+        REAL_PUBLISHERS[platform] ??
+        buildBlogPublishers(config)[platform] ??
+        buildBrowserPublishers(config)[platform];
       return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });
     }),
   };

@@ -289,11 +289,15 @@ M0 骨架契约
 
 依据 [`acceptance.md`](acceptance.md)，规格见 [`spec.md`](spec.md) 附录 A。
 
-### T8.1 `file` transport + Blog Publisher `[ ]`
+### T8.1 `file` transport + Blog Publisher `[x]`
 **交付物**：`src/providers/publisher/blog.ts` —— 写 markdown 到 Astro content collection + git commit/push
 **接口变更**：`PublishTransport` 增加 `'file'`
 **验收**：契约测试通过；写入的 frontmatter 能被 Astro 解析；dry-run 不写文件不 commit；同一 slug 重复发布不覆盖已有文章而是报错
 **依据**：spec.md §A.4。**这是唯一允许审批后全自动的通道**——git 可撤回，误发一篇 blog 是 revert，误发一条小红书是永久的
+**验收结果**：✅ 15 测试通过
+**发现的关键约束**：两个 blog 是同一仓库的两个 collection（`blog` 技术 / `my` 生活），**各有不同的 category 枚举**。category 不在枚举里不是「这篇发不出去」，而是 **Astro 构建直接失败，整站文章一起挂**——所以枚举校验做在写文件之前，错误信息里列出允许值
+**其他保证**：同名 slug 拒绝覆盖已发布文章；git push 失败时**保留已写入的文章**（删掉「清理」会丢内容），报 retryable 让人工接手
+**契约套件抓到我自己的 bug**：声明了 `maxTextLength` 却没在 `validate()` 里执行——正是这个套件存在的意义
 
 ### T8.2 Telegram Publisher + Engagement `[ ]`
 **交付物**：`src/providers/publisher/telegram.ts` + `src/providers/engagement/telegram.ts`
