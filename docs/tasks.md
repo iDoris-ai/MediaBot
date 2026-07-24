@@ -162,15 +162,15 @@
 **交付物**：配置接入 `purahmanian/google-trends-mcp`
 **验收**：给定关键词返回趋势数据并落 `source_items`
 
-### T4.3 CLI 接入层 + agent-reach `[ ]`
-**依赖**：T0.2
-**交付物**：`src/core/cli-adapter.ts` 通用子进程适配器 + agent-reach provider
-**验收**：13 平台抓取可用，产出符合 `SourceItem`
+### T4.3 CLI 搜索型 Source `[x]`
+**交付物**：`src/providers/source/cli-search.ts` —— 小红书 / Twitter / B站 关键词监控，共用一套映射框架
+**验收**：✅ 14 测试通过（含 eyes-not-hands 契约）；真实小红书抓取验证通过
+**说明**：agent-reach 本身是路由器/安装器，实际抓取由底层 CLI 完成，因此直接适配底层 CLI 更直接。单个关键词失败不影响其他关键词；登录过期则中止而非静默返回空。
 
-### T4.4 情报简报 `[ ]`
-**依赖**：T4.2, T4.3, T1.1
-**交付物**：定时聚合多 source → Claude 总结 → 简报（Web UI + 可选推送）
-**验收**：每日定时产出；只读，不触发任何发布
+### T4.4 情报简报 `[x]`
+**交付物**：`src/core/briefing.ts` + daemon `briefing` 定时任务（默认 07:30）
+**验收**：✅ 8 测试通过；**有测试断言简报不创建 drafts/approvals/posts 任何一行**——监控只做眼睛不做手
+**降级设计**：模型不可用时输出原始信号列表，不因此丢掉整轮监控结果
 
 ### T4.5 竞品 / SEO / 社交监听 `[ ]`
 **依赖**：T4.1

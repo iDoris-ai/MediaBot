@@ -4,6 +4,7 @@ import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { ApprovalQueue } from './core/approval';
 import { RssSourceProvider } from './providers/source/rss';
+import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
 import { ClaudeComposer } from './providers/composer/claude';
 import { DryRunPublisher } from './providers/publisher/dryrun';
 import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
@@ -171,7 +172,12 @@ export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
 
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
-    sources: config.feeds.length ? [new RssSourceProvider({ feeds: config.feeds })] : [],
+    sources: [
+      ...(config.feeds.length ? [new RssSourceProvider({ feeds: config.feeds })] : []),
+      ...config.searchPlatforms.map(
+        (p) => new CliSearchSource(p as SearchPlatform, { keywords: config.keywords }),
+      ),
+    ],
     composer: new ClaudeComposer(),
     publishers: config.targetPlatforms.map((platform) => {
       const real = REAL_PUBLISHERS[platform];

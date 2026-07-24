@@ -5,6 +5,7 @@ import { Pipeline } from './core/pipeline';
 import { Scheduler } from './core/scheduler';
 import { createServer } from './server/api';
 import { buildProviders } from './cli';
+import { generateBriefing } from './core/briefing';
 
 /**
  * The long-running process.
@@ -23,8 +24,10 @@ interface DaemonSchedule {
   ingest?: string;
   /** When to publish approved-and-due items. Default: every 5 minutes. */
   publish?: string;
-  /** When to retry failures whose backoff has elapsed. Default: every 5 minutes. */
-  retry?: string;
+  /** Keyword monitoring sweep. Default: hourly. */
+  monitor?: string;
+  /** Daily intelligence briefing. Default: 07:30. */
+  briefing?: string;
 }
 
 async function main(): Promise<void> {
@@ -78,6 +81,27 @@ async function main(): Promise<void> {
       for (const f of res.failed) {
         log(`publish failed ${f.approvalId}: ${f.error}${f.willRetry ? ' (will retry)' : ''}`, 'warn');
       }
+    },
+  });
+
+  scheduler.add({
+    name: 'monitor',
+    // Read-only sweep: collects signals without composing or queueing anything.
+    cron: schedule.monitor ?? '15 * * * *',
+    run: async () => {
+      const res = await pipeline.ingest({ keywords: config.keywords, limit: 30 });
+      if (res.stored) log(`monitor: ${res.stored} new signals`);
+      for (const e of res.errors) log(`  source ${e.providerId}: ${e.message}`, 'warn');
+    },
+  });
+
+  scheduler.add({
+    name: 'briefing',
+    cron: schedule.briefing ?? '30 7 * * *',
+    run: async () => {
+      const b = await generateBriefing(db, { locale: config.locale });
+      log(`briefing: ${b.itemCount} signals`);
+      if (b.itemCount) process.stdout.write(`\n${b.text}\n\n`);
     },
   });
 

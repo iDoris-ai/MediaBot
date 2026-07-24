@@ -15,10 +15,16 @@ export interface MediaBotConfig {
   dbFile: string;
   outDir: string;
   feeds: string[];
+  /** Platforms to monitor by keyword (xiaohongshu | twitter | bilibili). */
+  searchPlatforms: string[];
+  /** Keywords the monitoring layer watches. */
+  keywords: string[];
   targetPlatforms: string[];
   locale: string;
   style?: string;
   goal?: string;
+  port?: number;
+  schedule?: { ingest?: string; publish?: string; monitor?: string; briefing?: string };
 }
 
 export function home(): string {
@@ -31,6 +37,8 @@ export function configPath(): string {
 
 const DEFAULTS: Omit<MediaBotConfig, 'home' | 'dbFile' | 'outDir'> = {
   feeds: [],
+  searchPlatforms: [],
+  keywords: [],
   targetPlatforms: ['dryrun'],
   locale: 'zh-CN',
 };
