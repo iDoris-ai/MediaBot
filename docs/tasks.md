@@ -282,3 +282,46 @@ M0 骨架契约
 ```
 
 **M1 已完成（2026-07-24）——基础流程已跑通**——全链路可在无任何平台凭证的情况下端到端验证。
+
+---
+
+## M8 — 按验收标准补齐（2026-07-24 追加）
+
+依据 [`acceptance.md`](acceptance.md)，规格见 [`spec.md`](spec.md) 附录 A。
+
+### T8.1 `file` transport + Blog Publisher `[ ]`
+**交付物**：`src/providers/publisher/blog.ts` —— 写 markdown 到 Astro content collection + git commit/push
+**接口变更**：`PublishTransport` 增加 `'file'`
+**验收**：契约测试通过；写入的 frontmatter 能被 Astro 解析；dry-run 不写文件不 commit；同一 slug 重复发布不覆盖已有文章而是报错
+**依据**：spec.md §A.4。**这是唯一允许审批后全自动的通道**——git 可撤回，误发一篇 blog 是 revert，误发一条小红书是永久的
+
+### T8.2 Telegram Publisher + Engagement `[ ]`
+**交付物**：`src/providers/publisher/telegram.ts` + `src/providers/engagement/telegram.ts`
+**验收**：契约测试双槽位通过；**群消息只在「被 @ / 命令 / 匹配关键词」时才回**，其余一律不回（必须有测试）；dry-run 不发送
+**参考**：`~/Dev/tools/telethon/CBots`（telethon 实现、命令分发、反广告准入）。**Bot API 走 HTTP 即可，不必引入 telethon**
+**依据**：spec.md §A.2
+
+### T8.3 小红书视频 + 视频号 profile 填充 `[ ]`
+**交付物**：把 spec.md §A.3 的实测 selector 填进 `UPLOAD_PROFILE_TEMPLATES`
+**接口变更**：`successIndicator` 支持 `url:` 前缀（两个平台都靠 URL 跳转判定成功，而非元素出现）
+**验收**：`mediabot profiles` 显示 selector 齐全；**`verified` 仍保持 false** —— selector 来自第三方仓库的观察，未经本人在真实登录态下验证，规则不破例
+**依据**：spec.md §A.3
+
+### T8.4 Reddit 单账号 Source + Engagement `[ ]`
+**交付物**：`src/providers/source/reddit.ts`（`rdt search`）+ `src/providers/engagement/reddit.ts`（`rdt comment`）
+**验收**：契约测试通过；**不实现 upvote**（即使单账号，自动投票仍属 vote manipulation）；日限默认 5，低于其他平台
+**范围**：单个公开属于本人/组织的账号。多人设、自动点赞背书**不做**，理由见 acceptance.md §3
+
+### T8.5 内容形态适配 `[ ]`
+**交付物**：composer prompt 按平台注入形态要求（小红书重钩子和标签、公众号重结构、blog 重深度、X 重密度、Telegram 重简短）
+**验收**：同一 brief 产出的各平台 variant **不是同一份文案的复制**——测试断言任意两版的正文相似度低于阈值
+**依据**：acceptance.md §四.1，这是用户判断「好用」的第一条
+
+### T8.6 端到端验收演练 `[ ]`
+**依赖**：T8.1–T8.5
+**交付物**：一次真实全链路：抓取 → 生成多平台变体（含配图/成片）→ 审批队列 → dry-run 发布，产出可人工检查的报告
+**验收**：对照 acceptance.md §四 的五条标准逐条给出证据
+
+### T8.7 提交 PR `[ ]`
+**依赖**：T8.1–T8.6 全绿
+**交付物**：feature 分支 → PR 到 main，说明本轮交付、未完成项、以及需要用户实测的部分
