@@ -115,26 +115,30 @@
 **关键设计**：**只建草稿，绝不群发**。公众号每日群发次数极少且不可撤回，`freepublish/submit` 不调用——人在后台点发送。有测试断言从不请求 freepublish。
 **实现来源**：API 路径复用 `jhfnetboy/wechat-content-pipeline`（**你自己的仓库，MIT**），TS 重写并接入契约。
 
-### T2.5 抖音 / 视频号 / 快手 / B站 Publisher `[ ]`
-**依赖**：T2.1, T2.2
-**交付物**：对应 provider（视频为主）
-**验收**：各自契约测试通过；`limits.video` 声明与平台实际一致
+### T2.5 B站动态 Publisher `[x]`
+**交付物**：`src/providers/publisher/bilibili.ts`（`bili dynamic-post`，纯文本动态）
+**验收**：✅ 9 测试通过；**不声明 video 支持**——CLI 没有投稿能力，谎报会在发布时才炸
+**说明**：抖音 / 视频号 / 快手 / B站视频投稿仍无 CLI，需 Playwright，另开任务（见 T2.6）
+
+### T2.6 抖音 / 视频号 / 快手 / B站视频投稿 `[ ]`
+**依赖**：T2.1 Playwright 会话 + T2.2 凭证保管
+**说明**：经核查这四个平台确实没有可用 CLI，是目前唯一必须走 ③ 自研 Playwright 的部分
 
 ---
 
 ## M3 — Web UI（主入口）
 
-### T3.1 daemon `[ ]`
+### T3.1 daemon `[x]`
 **依赖**：T1.6
 **交付物**：`src/daemon.ts` —— 调度器（cron）、轮询器、重试队列、优雅退出；launchd/systemd 单元文件
 **验收**：定时任务到点触发；重启后不重复发布（幂等键生效）
 
-### T3.2 本地 HTTP API `[ ]`
+### T3.2 本地 HTTP API `[x]`
 **依赖**：T3.1
 **交付物**：`src/server/api.ts` —— 仅监听 localhost，REST：草稿/审批/日历/情报/账号/运行日志
 **验收**：非 localhost 请求被拒绝
 
-### T3.3 Web UI `[ ]`
+### T3.3 Web UI `[x]`
 **依赖**：T3.2
 **交付物**：审批队列（图文预览）、发布日历、情报 feed、账号状态、运行日志
 **验收**：能在浏览器完成"看草稿 → 改 → 批准 → 定时"全流程
