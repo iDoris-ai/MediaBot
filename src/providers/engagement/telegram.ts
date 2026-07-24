@@ -26,6 +26,14 @@ export interface TelegramEngagementOptions {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   limit?: number;
+  /**
+   * Called for every polled message, before any filtering.
+   *
+   * This exists so approval replies can be read without a second `getUpdates`
+   * consumer — see providers/telegram/approval-poller.ts. It must not throw:
+   * a hook failure would drop the messages this poll already acknowledged.
+   */
+  onMessage?: (message: TelegramMessage) => void;
 }
 
 export class TelegramEngagement implements EngagementProvider {
@@ -43,6 +51,8 @@ export class TelegramEngagement implements EngagementProvider {
   private readonly limit: number;
   private offset: number | undefined;
   private botUsername: string | undefined;
+  /** Assignable so the daemon can attach reply-approval after construction. */
+  onMessage: ((message: TelegramMessage) => void) | undefined;
 
   constructor(opts: TelegramEngagementOptions) {
     this.api = new TelegramApi({
@@ -53,6 +63,7 @@ export class TelegramEngagement implements EngagementProvider {
     this.chatIds = new Set(opts.chatIds ?? []);
     this.trigger = opts.trigger ?? {};
     this.limit = opts.limit ?? 50;
+    this.onMessage = opts.onMessage;
   }
 
   /**
@@ -96,6 +107,17 @@ export class TelegramEngagement implements EngagementProvider {
     for (const update of updates) {
       const msg = update.message;
       if (!msg) continue;
+
+      // Before any filtering, and never allowed to break the poll: these
+      // updates are already acknowledged, so throwing here would lose them.
+      if (this.onMessage) {
+        try {
+          this.onMessage(msg);
+        } catch {
+          // Deliberately swallowed; the hook owns its own error reporting.
+        }
+      }
+
       if (this.chatIds.size && !this.chatIds.has(String(msg.chat.id))) continue;
 
       const publishedAt = new Date(msg.date * 1000);
