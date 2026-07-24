@@ -39,6 +39,10 @@ export interface MediaBotConfig {
   goal?: string;
   /** Generate a cover image locally for each draft. */
   generateImages?: boolean;
+  /** Generate a voiceover track locally for each draft. */
+  generateVoiceover?: boolean;
+  /** Override the TTS voice, e.g. "Tingting". */
+  voice?: string;
   /** Selector profiles for browser-driven platforms; override the templates here. */
   browserProfiles?: Record<string, unknown>;
   notify?: {

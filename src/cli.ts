@@ -12,6 +12,7 @@ import { CliSearchSource, type SearchPlatform } from './providers/source/cli-sea
 import { McpSource } from './providers/source/mcp';
 import { ClaudeComposer } from './providers/composer/claude';
 import { FluxImageComposer } from './providers/composer/flux-image';
+import { TtsComposer } from './providers/composer/tts';
 import { ChainComposer } from './providers/composer/chain';
 import { DryRunPublisher } from './providers/publisher/dryrun';
 import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
@@ -322,6 +323,19 @@ export function buildBrowserPublishers(
   return out;
 }
 
+/** Text composer, optionally preceded by local asset generators. */
+export function buildComposer(config: ReturnType<typeof loadConfig>) {
+  const assetProviders = [
+    ...(config.generateImages ? [new FluxImageComposer()] : []),
+    ...(config.generateVoiceover
+      ? [new TtsComposer(config.voice ? { voice: config.voice } : {})]
+      : []),
+  ];
+  return assetProviders.length
+    ? new ChainComposer({ assetProviders, textComposer: new ClaudeComposer() })
+    : new ClaudeComposer();
+}
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: [
@@ -345,12 +359,7 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
           }),
       ),
     ],
-    composer: config.generateImages
-      ? new ChainComposer({
-          assetProviders: [new FluxImageComposer()],
-          textComposer: new ClaudeComposer(),
-        })
-      : new ClaudeComposer(),
+    composer: buildComposer(config),
     publishers: config.targetPlatforms.map((platform) => {
       const real = REAL_PUBLISHERS[platform] ?? buildBrowserPublishers(config)[platform];
       return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });

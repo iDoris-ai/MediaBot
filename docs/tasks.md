@@ -200,10 +200,11 @@
 **契约新增**：`ComposerProvider.composeAssets?()`（可选，附加式不破坏现有 provider）——图像/音频/视频天然产出的是文件而非「每平台一版」，由 ChainComposer 喂给文本 composer 的 `brief.assets`
 **降级设计**：配图失败只降级为纯文字帖，不吞掉整条内容；chain 健康检查对资产 provider 失败报 degraded 而非 down
 
-### T5.2 TTS / 配音 `[ ]`
-**依赖**：T0.2
-**交付物**：CLI 适配 MOSS-TTS / LuxTTS 等
-**验收**：文本转音频，产物可被视频 composer 消费
+### T5.2 TTS / 配音 `[x]`
+**交付物**：`src/providers/composer/tts.ts` —— 系统 TTS（macOS `say`）+ ffmpeg 转 AAC
+**验收**：✅ 12 测试通过；真实合成中文口播（7 秒音频，2 秒出片，audio/mp4）
+**为什么用 say 而不是 MOSS-TTS/LuxTTS**：本机有 CosyVoice 模型但没装推理 CLI，装一套环境才能用；`say` 零安装即可用，中文语音（Tingting zh_CN）质量够做短视频旁白。**这是下限不是上限**——更好的引擎按同一接口接进来即可
+**降级设计**：ffmpeg 不可用时保留 AIFF 而非丢掉音频；拿不到时长不影响产出（时长只用于平台限制校验）；`say` 退出码 0 但没写文件视为失败
 
 ### T5.3 短视频生成 `[ ]`
 **依赖**：T5.2, T4.3
