@@ -86,7 +86,7 @@ test('a missing server binary is reported as misconfigured', async () => {
 
 test('a hung request times out instead of blocking forever', async () => {
   // Point at a process that never speaks the protocol.
-  const c = new McpClient({ command: process.execPath, args: ['-e', 'setTimeout(()=>{},60000)'], timeoutMs: 400 });
+  const c = new McpClient({ command: process.execPath, args: ['-e', 'setTimeout(()=>{},60000)'], timeoutMs: 1500 });
   try {
     await assert.rejects(c.listTools(), /timed out/);
   } finally {

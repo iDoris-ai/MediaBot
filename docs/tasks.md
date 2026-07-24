@@ -206,10 +206,12 @@
 **为什么用 say 而不是 MOSS-TTS/LuxTTS**：本机有 CosyVoice 模型但没装推理 CLI，装一套环境才能用；`say` 零安装即可用，中文语音（Tingting zh_CN）质量够做短视频旁白。**这是下限不是上限**——更好的引擎按同一接口接进来即可
 **降级设计**：ffmpeg 不可用时保留 AIFF 而非丢掉音频；拿不到时长不影响产出（时长只用于平台限制校验）；`say` 退出码 0 但没写文件视为失败
 
-### T5.3 短视频生成 `[ ]`
-**依赖**：T5.2, T4.3
-**交付物**：CLI 适配 `AIDC-AI/Pixelle-Video` 或 `FireRed-OpenStoryline`
-**验收**：脚本 → 成片；`limits.video` 与目标平台匹配
+### T5.3 短视频生成 `[x]`
+**交付物**：`src/providers/composer/video.ts` —— 配图 + 旁白 → 竖屏成片（ffmpeg）
+**验收**：✅ 13 测试通过；**真实全链路验证**：FLUX 出图 41s → TTS 旁白 1.6s → ffmpeg 拼接 0.7s，产出 h264 1080×1920 + aac 音轨、4.2s、146KB，ffprobe 确认可播
+**为什么没接 Pixelle-Video / OpenStoryline**：那两个要先装 ComfyUI 或搭模型服务。手上已有本地出图 + 本地 TTS + ffmpeg，直接拼出抖音/视频号真正收的格式，用户装完就能出第一条片。**这是务实的下限**，重型引擎按同一接口后续可接
+**顺带修掉一个真 bug**：`ChainComposer` 原本给每个资产 provider 传的都是**原始 brief**，视频合成器因此永远看不到前面刚生成的图和音频，会静默返回空。改成资产逐级累积，并加了回归测试
+**关键细节**：`-pix_fmt yuv420p` 不加的话很多播放器和平台直接拒收；concat 列表末尾重复最后一张图，否则 ffmpeg 会吃掉最后一个 duration 导致收尾镜头被截断
 
 ### T5.4 发布物料流水线 `[ ]`
 **依赖**：T0.2

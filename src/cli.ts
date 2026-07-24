@@ -13,6 +13,7 @@ import { McpSource } from './providers/source/mcp';
 import { ClaudeComposer } from './providers/composer/claude';
 import { FluxImageComposer } from './providers/composer/flux-image';
 import { TtsComposer } from './providers/composer/tts';
+import { VideoComposer } from './providers/composer/video';
 import { ChainComposer } from './providers/composer/chain';
 import { DryRunPublisher } from './providers/publisher/dryrun';
 import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
@@ -325,11 +326,14 @@ export function buildBrowserPublishers(
 
 /** Text composer, optionally preceded by local asset generators. */
 export function buildComposer(config: ReturnType<typeof loadConfig>) {
+  // Order matters: the video composer consumes what the image and audio
+  // composers produced, so it must run last.
   const assetProviders = [
     ...(config.generateImages ? [new FluxImageComposer()] : []),
     ...(config.generateVoiceover
       ? [new TtsComposer(config.voice ? { voice: config.voice } : {})]
       : []),
+    ...(config.generateVideo ? [new VideoComposer()] : []),
   ];
   return assetProviders.length
     ? new ChainComposer({ assetProviders, textComposer: new ClaudeComposer() })

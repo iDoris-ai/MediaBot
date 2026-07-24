@@ -43,6 +43,8 @@ export interface MediaBotConfig {
   generateVoiceover?: boolean;
   /** Override the TTS voice, e.g. "Tingting". */
   voice?: string;
+  /** Assemble a vertical slideshow video from the generated cover + narration. */
+  generateVideo?: boolean;
   /** Selector profiles for browser-driven platforms; override the templates here. */
   browserProfiles?: Record<string, unknown>;
   notify?: {

@@ -200,3 +200,44 @@ test('pre-existing brief assets survive alongside generated ones', async () => {
 
   assert.equal(draft.variants[0]!.media.length, 2);
 });
+
+test('chain feeds each asset provider what the previous ones produced', async () => {
+  // The bug this guards: passing every provider the ORIGINAL brief leaves a
+  // video composer with no images to assemble, so it silently produces nothing.
+  const seen: Array<number> = [];
+
+  const first: any = {
+    info: { id: 'first', slot: 'composer', name: 'first' },
+    produces: ['image'],
+    healthCheck: async () => ({ ok: true }),
+    compose: async () => ({ id: 'd', variants: [] }),
+    composeAssets: async (b: any) => {
+      seen.push((b.assets ?? []).length);
+      return [{ kind: 'image', path: '/tmp/generated.png' }];
+    },
+  };
+
+  const second: any = {
+    ...first,
+    info: { id: 'second', slot: 'composer', name: 'second' },
+    composeAssets: async (b: any) => {
+      seen.push((b.assets ?? []).length);
+      return [{ kind: 'video', path: '/tmp/out.mp4' }];
+    },
+  };
+
+  const text = new ClaudeComposer({
+    runner: async () => ({
+      text: '```json\n{"variants":[{"platform":"xiaohongshu","body":"b"}]}\n```',
+      transcript: '',
+    }),
+  });
+
+  const draft = await new ChainComposer({
+    assetProviders: [first, second],
+    textComposer: text,
+  }).compose(brief());
+
+  assert.deepEqual(seen, [0, 1], 'the second provider must see the first provider output');
+  assert.equal(draft.variants[0]!.media.length, 2, 'both assets reach the post');
+});

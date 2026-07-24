@@ -64,21 +64,23 @@ export class ChainComposer implements ComposerProvider {
   }
 
   async compose(brief: ContentBrief): Promise<Draft> {
-    const generated: MediaRef[] = [];
+    // Assets accumulate as we go, because later providers consume earlier
+    // output — the video composer needs the cover and narration that the image
+    // and TTS providers just produced. Passing each one the original brief
+    // would leave it with nothing to work from.
+    let assets: MediaRef[] = [...(brief.assets ?? [])];
 
     for (const provider of this.assetProviders) {
       if (!provider.composeAssets) continue;
       try {
-        generated.push(...(await provider.composeAssets(brief)));
+        const produced = await provider.composeAssets({ ...brief, assets });
+        assets = [...assets, ...produced];
       } catch (err) {
         // A missing cover is a worse post, not a lost one.
         this.onAssetError?.(provider.info.id, err);
       }
     }
 
-    return this.textComposer.compose({
-      ...brief,
-      assets: [...(brief.assets ?? []), ...generated],
-    });
+    return this.textComposer.compose({ ...brief, assets });
   }
 }

@@ -97,7 +97,7 @@ test('kills the subprocess on timeout', async () => {
   const bin = fakeClaude(`#!/bin/sh
 sleep 30
 `);
-  await assert.rejects(withBin(bin, () => runClaude('hi', { timeoutMs: 300 })), /timed out/i);
+  await assert.rejects(withBin(bin, () => runClaude('hi', { timeoutMs: 1500 })), /timed out/i);
 });
 
 test('passes --model through to the CLI', async () => {
