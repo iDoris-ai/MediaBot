@@ -108,10 +108,12 @@
 **验收**：✅ 14 测试通过（含双槽位契约套件）；dry-run 不触达平台；真实二进制 checkAuth 打通
 **说明**：计划外新增。原本 X 被归为"③ 自研官方 API"，实际 `twitter` CLI 已有 post/reply/tweet 全套，改走 ② CLI，**且无需 X API 订阅**。CJK 权重计数（中文字符算 2）避免 280 字上限误判。
 
-### T2.4 公众号 Publisher `[ ]`
-**依赖**：T2.1, T2.2
-**交付物**：`src/providers/publisher/wechat-mp.ts` —— 官方草稿箱 API 优先，浏览器兜底
-**验收**：认证号走 API 成功；非认证号自动回退浏览器路径
+### T2.4 公众号 Publisher `[x]`
+**依赖**：无（官方 API 路线，不需要浏览器）
+**交付物**：`src/providers/publisher/wechat-mp.ts`
+**验收**：✅ 13 测试通过（含契约套件）；token 缓存与过期刷新；错误码分类（40001 可重试 / 61004 IP 白名单不可重试 / 45009 限流可重试）
+**关键设计**：**只建草稿，绝不群发**。公众号每日群发次数极少且不可撤回，`freepublish/submit` 不调用——人在后台点发送。有测试断言从不请求 freepublish。
+**实现来源**：API 路径复用 `jhfnetboy/wechat-content-pipeline`（**你自己的仓库，MIT**），TS 重写并接入契约。
 
 ### T2.5 抖音 / 视频号 / 快手 / B站 Publisher `[ ]`
 **依赖**：T2.1, T2.2

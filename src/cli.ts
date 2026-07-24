@@ -8,6 +8,7 @@ import { ClaudeComposer } from './providers/composer/claude';
 import { DryRunPublisher } from './providers/publisher/dryrun';
 import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
 import { TwitterPublisher } from './providers/publisher/twitter';
+import { WeChatMpPublisher } from './providers/publisher/wechat-mp';
 import { XiaohongshuEngagement } from './providers/engagement/xiaohongshu';
 import { TwitterEngagement } from './providers/engagement/twitter';
 import type { PipelineProviders } from './core/pipeline';
@@ -158,6 +159,7 @@ async function main(argv: string[]): Promise<number> {
 const REAL_PUBLISHERS: Record<string, () => PublisherProvider> = {
   xiaohongshu: () => new XiaohongshuPublisher(),
   twitter: () => new TwitterPublisher(),
+  'wechat-mp': () => new WeChatMpPublisher(),
 };
 
 export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
