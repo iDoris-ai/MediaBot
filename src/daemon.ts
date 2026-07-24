@@ -4,7 +4,8 @@ import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { Scheduler } from './core/scheduler';
 import { createServer } from './server/api';
-import { buildProviders } from './cli';
+import { buildEngagement, buildProviders } from './cli';
+import { EngagementRunner } from './core/engagement';
 import { generateBriefing } from './core/briefing';
 
 /**
@@ -28,6 +29,8 @@ interface DaemonSchedule {
   monitor?: string;
   /** Daily intelligence briefing. Default: 07:30. */
   briefing?: string;
+  /** Comment polling + reply drafting. Default: every 30 minutes. */
+  engage?: string;
 }
 
 async function main(): Promise<void> {
@@ -41,7 +44,20 @@ async function main(): Promise<void> {
 
   const server = createServer({
     db,
-    onExecute: () => pipeline.executeDue(),
+    // The console's approve button must settle both kinds of approval.
+    onExecute: async () => {
+      const published = await pipeline.executeDue();
+      const engagementProviders = buildEngagement(config);
+      if (!engagementProviders.length) return published;
+      const replies = await new EngagementRunner(db, {
+        providers: engagementProviders,
+        locale: config.locale,
+      }).sendApproved();
+      return {
+        published: [...published.published, ...replies.sent],
+        failed: [...published.failed, ...replies.failed],
+      };
+    },
   });
 
   const scheduler = new Scheduler({
@@ -104,6 +120,35 @@ async function main(): Promise<void> {
       if (b.itemCount) process.stdout.write(`\n${b.text}\n\n`);
     },
   });
+
+  const engagement = buildEngagement(config);
+  if (engagement.length) {
+    const runner = new EngagementRunner(db, {
+      providers: engagement,
+      locale: config.locale,
+      ...(config.style ? { style: config.style } : {}),
+    });
+
+    scheduler.add({
+      name: 'engage',
+      cron: schedule.engage ?? '*/30 * * * *',
+      run: async () => {
+        const polled = await runner.poll();
+        if (polled.stored) log(`engage: ${polled.stored} new comments`);
+        for (const e of polled.errors) log(`  ${e.platform}: ${e.message}`, 'warn');
+
+        if (polled.stored) {
+          const drafted = await runner.draftReplies();
+          if (drafted.drafted) log(`engage: ${drafted.drafted} replies awaiting approval`);
+        }
+
+        // Replies a human already approved go out on the same tick.
+        const sent = await runner.sendApproved();
+        if (sent.sent.length) log(`engage: ${sent.sent.length} replies sent`);
+        for (const f of sent.failed) log(`  reply failed ${f.approvalId}: ${f.error}`, 'warn');
+      },
+    });
+  }
 
   await new Promise<void>((resolve) => {
     // Loopback only — the database holds credentials and pending outbound posts.

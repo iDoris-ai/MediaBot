@@ -172,6 +172,14 @@ export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
   twitter: () => new TwitterEngagement(),
 };
 
+/** Engagement providers for the platforms currently targeted. */
+export function buildEngagement(config: ReturnType<typeof loadConfig>): EngagementProvider[] {
+  return config.targetPlatforms
+    .map((p) => REAL_ENGAGEMENT[p])
+    .filter((f): f is () => EngagementProvider => Boolean(f))
+    .map((f) => f());
+}
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: [
