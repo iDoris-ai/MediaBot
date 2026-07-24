@@ -6,6 +6,8 @@ import { ApprovalQueue } from './core/approval';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
 import { ClaudeComposer } from './providers/composer/claude';
+import { FluxImageComposer } from './providers/composer/flux-image';
+import { ChainComposer } from './providers/composer/chain';
 import { DryRunPublisher } from './providers/publisher/dryrun';
 import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
 import { TwitterPublisher } from './providers/publisher/twitter';
@@ -178,7 +180,12 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
         (p) => new CliSearchSource(p as SearchPlatform, { keywords: config.keywords }),
       ),
     ],
-    composer: new ClaudeComposer(),
+    composer: config.generateImages
+      ? new ChainComposer({
+          assetProviders: [new FluxImageComposer()],
+          textComposer: new ClaudeComposer(),
+        })
+      : new ClaudeComposer(),
     publishers: config.targetPlatforms.map((platform) => {
       const real = REAL_PUBLISHERS[platform];
       return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });

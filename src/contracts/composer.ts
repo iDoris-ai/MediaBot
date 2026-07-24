@@ -17,6 +17,16 @@ export interface ComposerProvider {
   healthCheck(): Promise<{ ok: boolean; detail?: string }>;
 
   compose(brief: ContentBrief): Promise<Draft>;
+
+  /**
+   * Optional: produce standalone assets for another composer to attach.
+   *
+   * Image, audio and video generators do not naturally yield "a post per
+   * platform" — they yield files that a text composer then attaches. Providers
+   * that generate media implement this, and a chain composer feeds the result
+   * in as `ContentBrief.assets`.
+   */
+  composeAssets?(brief: ContentBrief): Promise<MediaRef[]>;
 }
 
 export interface ContentBrief {

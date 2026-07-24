@@ -23,6 +23,8 @@ export interface MediaBotConfig {
   locale: string;
   style?: string;
   goal?: string;
+  /** Generate a cover image locally for each draft. */
+  generateImages?: boolean;
   port?: number;
   schedule?: { ingest?: string; publish?: string; monitor?: string; briefing?: string };
 }

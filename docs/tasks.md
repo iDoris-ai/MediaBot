@@ -181,10 +181,11 @@
 
 ## M5 — 内容生产扩展
 
-### T5.1 配图 `[ ]`
-**依赖**：T0.2
-**交付物**：本地 flux-gen（FLUX.2 Klein 4B MLX）包装成 ComposerProvider
-**验收**：按 brief 产图并写入 `MediaRef`
+### T5.1 配图 `[x]`
+**交付物**：`src/providers/composer/flux-image.ts` + `src/providers/composer/chain.ts`
+**验收**：✅ 13 测试通过；真实 FLUX.2 Klein 出图验证（42s / 768×768 / 751KB）
+**契约新增**：`ComposerProvider.composeAssets?()`（可选，附加式不破坏现有 provider）——图像/音频/视频天然产出的是文件而非「每平台一版」，由 ChainComposer 喂给文本 composer 的 `brief.assets`
+**降级设计**：配图失败只降级为纯文字帖，不吞掉整条内容；chain 健康检查对资产 provider 失败报 degraded 而非 down
 
 ### T5.2 TTS / 配音 `[ ]`
 **依赖**：T0.2
