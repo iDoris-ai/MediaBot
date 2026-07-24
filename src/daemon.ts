@@ -8,6 +8,7 @@ import { buildEngagement, buildProviders } from './cli';
 import { EngagementRunner } from './core/engagement';
 import { GoalStore } from './core/goals';
 import { buildCollectors, localCollectors } from './core/metrics';
+import { buildNotifiers, notifyAll } from './providers/notify';
 import { generateBriefing } from './core/briefing';
 
 /**
@@ -68,6 +69,16 @@ async function main(): Promise<void> {
     onError: (job, err) => log(`job ${job} failed: ${message(err)}`, 'warn'),
   });
 
+  const notifiers = buildNotifiers(config.notify ?? {});
+  const consoleUrl = `http://127.0.0.1:${port}`;
+
+  /** Ping whoever is on duty. Never lets a failed ping break the caller. */
+  const ping = async (title: string, body: string) => {
+    if (!notifiers.length) return;
+    const res = await notifyAll(notifiers, { title, body, url: consoleUrl });
+    for (const f of res.failed) log(`notify ${f.id} failed: ${f.error}`, 'warn');
+  };
+
   scheduler.add({
     name: 'ingest',
     cron: schedule.ingest ?? '0 8 * * *',
@@ -87,6 +98,12 @@ async function main(): Promise<void> {
       const proposal = await pipeline.propose(variants);
       log(`queued ${proposal.approvals.length} for approval`);
       for (const s of proposal.skipped) log(`  skipped ${s.platform}: ${s.reason}`, 'warn');
+      if (proposal.approvals.length) {
+        await ping(
+          `${proposal.approvals.length} 条草稿待审批`,
+          proposal.approvals.map((a) => (a.payload as any)?.platform ?? a.kind).join(', '),
+        );
+      }
     },
   });
 
@@ -121,7 +138,10 @@ async function main(): Promise<void> {
     run: async () => {
       const b = await generateBriefing(db, { locale: config.locale });
       log(`briefing: ${b.itemCount} signals`);
-      if (b.itemCount) process.stdout.write(`\n${b.text}\n\n`);
+      if (b.itemCount) {
+        process.stdout.write(`\n${b.text}\n\n`);
+        await ping('今日情报简报', b.text.slice(0, 500));
+      }
     },
   });
 
@@ -143,7 +163,10 @@ async function main(): Promise<void> {
 
         if (polled.stored) {
           const drafted = await runner.draftReplies();
-          if (drafted.drafted) log(`engage: ${drafted.drafted} replies awaiting approval`);
+          if (drafted.drafted) {
+            log(`engage: ${drafted.drafted} replies awaiting approval`);
+            await ping(`${drafted.drafted} 条回复待审批`, '评论回复已起草');
+          }
         }
 
         // Replies a human already approved go out on the same tick.
@@ -180,6 +203,7 @@ async function main(): Promise<void> {
   log(`  data      ${config.home}`);
   log(`  platforms ${config.targetPlatforms.join(', ') || '(none configured)'}`);
   log(`  jobs      ${scheduler.jobNames.join(', ')}`);
+  log(`  notify    ${notifiers.map((n) => n.id).join(', ') || '(none configured)'}`);
 
   scheduler.start();
   // Evaluate immediately so a restart does not leave approved work stranded

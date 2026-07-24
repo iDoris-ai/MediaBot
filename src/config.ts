@@ -39,6 +39,12 @@ export interface MediaBotConfig {
   goal?: string;
   /** Generate a cover image locally for each draft. */
   generateImages?: boolean;
+  notify?: {
+    webhookUrl?: string;
+    webhookHeaders?: Record<string, string>;
+    telegramBotToken?: string;
+    telegramChatId?: string;
+  };
   port?: number;
   schedule?: { ingest?: string; publish?: string; monitor?: string; briefing?: string };
 }
