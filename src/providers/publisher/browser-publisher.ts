@@ -3,6 +3,7 @@ import path from 'path';
 import type { Page } from 'playwright';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -92,6 +93,8 @@ export class BrowserPublisher implements PublisherProvider {
   readonly platform: string;
   readonly transport: PublishTransport = 'browser';
   readonly limits: PlatformLimits;
+  /** Driving a creator console publishes for real; nothing here is undoable. */
+  readonly consequence: Consequence = 'irreversible';
 
   private readonly profile: UploadProfile;
   private readonly session: BrowserSession;

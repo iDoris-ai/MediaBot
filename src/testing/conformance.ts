@@ -195,6 +195,40 @@ async function checkPublisher(p: PublisherProvider, check: Check): Promise<void>
     );
   });
 
+  await check('declares a known consequence class, or none', () => {
+    if (p.consequence === undefined) return; // Defaults to irreversible.
+    assert(
+      ['local', 'reversible', 'draft_only', 'irreversible'].includes(p.consequence),
+      `unknown consequence: ${p.consequence} — the approval gate reads this to decide ` +
+        `whether a standing rule may cover this platform`,
+    );
+  });
+
+  await check('targetFor is stable and content-independent', () => {
+    if (!p.targetFor) return; // Then it is simply never grantable.
+    const bare = p.targetFor();
+    const again = p.targetFor();
+    assert(bare === again, 'targetFor must return the same destination on every call');
+    if (bare !== undefined) {
+      assert(
+        typeof bare === 'string' && bare.trim().length > 0,
+        'targetFor must return a non-empty destination or undefined',
+      );
+      // A target that varies with the draft would let a rule granted for one
+      // post apply to a destination the human never saw.
+      const withVariant = p.targetFor({
+        id: 'probe',
+        platform: p.platform,
+        body: 'probe',
+        media: [],
+      });
+      assert(
+        withVariant === bare,
+        'targetFor returned a different destination for a specific variant; the target must identify where this publishes, not what',
+      );
+    }
+  });
+
   await check('declares usable limits', () => {
     const l = p.limits;
     assert(l && typeof l === 'object', 'limits required');

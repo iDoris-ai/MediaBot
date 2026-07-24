@@ -145,7 +145,23 @@ function card(a) {
       <button class="ok" onclick="decide('\${esc(a.id)}','approve',true)">定时发布</button>
       <button class="no" onclick="decide('\${esc(a.id)}','reject')">拒绝</button>
     </div>
+    \${a.grantEntry ? \`<div class="meta">
+      <button onclick="allow('\${esc(a.id)}','\${esc(a.grantEntry)}')">以后不用问我</button>
+      <span>仅对 \${esc(a.grantEntry)}（\${esc(a.grantConsequence || '')}）生效，可随时撤销</span>
+    </div>\` : ''}
   </div>\`;
+}
+
+async function allow(id, entry) {
+  // Spelled out in full: this is the one control that decides on behalf of the
+  // human next time, so the exact scope has to be visible before, not after.
+  if (!confirm(\`以后自动批准「\${entry}」，不再询问。\\n只对这个确切目标生效，改配置或换目标后失效。\\n随时可撤销：mediabot revoke "\${entry}"\`)) return;
+  try {
+    await api(\`/api/approvals/\${id}/allow\`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    await Promise.all([render(), refreshStats()]);
+  } catch (e) { alert(e.message); }
 }
 
 async function decide(id, action, scheduled) {

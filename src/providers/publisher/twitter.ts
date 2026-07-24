@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -53,6 +54,8 @@ export class TwitterPublisher implements PublisherProvider {
   readonly platform = 'twitter';
   readonly transport: PublishTransport = 'cli';
   readonly limits = TWITTER_LIMITS;
+  /** Deleting a tweet does not unsend it — it has already been seen. */
+  readonly consequence: Consequence = 'irreversible';
 
   private readonly bin: string;
   private readonly runner: CliRunner;

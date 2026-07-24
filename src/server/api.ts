@@ -48,6 +48,22 @@ export function createServer(opts: ApiOptions): http.Server {
         return;
       }
 
+      if (route === 'GET /api/rules') {
+        send(res, 200, { rules: queue.standingRules.list() });
+        return;
+      }
+
+      if (route === 'POST /api/rules/revoke') {
+        const body = await readJson(req);
+        const entry = String(body.entry ?? '');
+        if (!entry) {
+          send(res, 400, { error: 'expected { entry }' });
+          return;
+        }
+        send(res, 200, { revoked: queue.standingRules.revoke(entry), entry });
+        return;
+      }
+
       if (route === 'GET /api/status') {
         send(res, 200, status(opts.db));
         return;
@@ -110,6 +126,14 @@ export function createServer(opts: ApiOptions): http.Server {
         }
         if (action === 'reject') {
           send(res, 200, { approval: queue.reject(id, { by: 'web', reason: body.reason }) });
+          return;
+        }
+        if (action === 'allow') {
+          // Grants a standing rule for this exact destination and approves the
+          // item. Refuses for anything the gate would not let a rule cover.
+          const granted = queue.grantFrom(id, 'web');
+          const executed = body.executeNow !== false && opts.onExecute ? await opts.onExecute() : null;
+          send(res, 200, { ...granted, executed });
           return;
         }
         send(res, 400, { error: `unknown action: ${action}` });

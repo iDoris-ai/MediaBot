@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { ApprovalQueue } from './core/approval';
+import { consequenceOf, isGrantable } from './core/consequence';
 import { GoalStore } from './core/goals';
 import { CredentialStore } from './core/credentials';
 import { buildCollectors, localCollectors } from './core/metrics';
@@ -48,6 +49,9 @@ Usage:
   mediabot queue [state]          List approvals (default: pending)
   mediabot approve <id> [--now]   Approve a queued item, then publish if due
   mediabot reject <id> [reason]   Reject a queued item
+  mediabot rules                  Standing approvals, and what may be granted
+  mediabot allow <action> <target>  Stop asking for this exact destination
+  mediabot revoke "<entry>"       Withdraw a standing approval
   mediabot status                 Counts by table and recent runs
   mediabot goals                  List goals and progress
   mediabot goal new <metric> <target> <title>
@@ -119,6 +123,13 @@ async function main(argv: string[]): Promise<number> {
         const when = a.scheduledFor ? new Date(a.scheduledFor).toISOString() : 'asap';
         log(`${a.id}  ${a.kind}  ${p?.platform ?? '-'}  ${when}`);
         log(`    ${preview(p?.title ? `${p.title} — ${p.body}` : p?.body ?? '')}`);
+        if (a.decidedBy?.startsWith('rule:')) {
+          log(`    approved by ${a.decidedBy.slice('rule:'.length)}`);
+        } else if (a.grantEntry && a.state === 'pending') {
+          // Only shown for actions that could be granted at all; an
+          // irreversible platform never advertises an option it will refuse.
+          log(`    stop asking: mediabot allow ${a.grantEntry}`);
+        }
       }
       return 0;
     }
@@ -142,6 +153,78 @@ async function main(argv: string[]): Promise<number> {
       new ApprovalQueue(db).reject(id, { by: 'cli', ...(rest[1] ? { reason: rest.slice(1).join(' ') } : {}) });
       log(`rejected ${id}`);
       return 0;
+    }
+
+    case 'allow': {
+      const [action, ...targetParts] = rest;
+      const target = targetParts.join(' ');
+      if (!action || !target) {
+        return fail('usage: mediabot allow <action> <target>   (copy the line from `mediabot queue`)');
+      }
+
+      // The consequence comes from the live provider, never from the command
+      // line — otherwise anyone could grant an irreversible platform by
+      // claiming it was reversible.
+      const platform = action.split(':')[1] ?? '';
+      const publisher = (providers.publishers ?? []).find((p) => p.platform === platform);
+      if (!publisher) return fail(`no publisher configured for "${platform}"`);
+
+      const declared = publisher.targetFor?.();
+      if (declared !== undefined && declared !== target) {
+        return fail(
+          `"${target}" is not where ${platform} currently publishes (${declared ?? 'no target'}) — ` +
+            `a rule must name the exact destination`,
+        );
+      }
+
+      try {
+        const rule = new ApprovalQueue(db).standingRules.grant(
+          { action, target, consequence: consequenceOf(publisher) },
+          'cli',
+        );
+        log(`granted: ${rule.entry}  (${rule.consequence})`);
+        log(`revoke with: mediabot revoke "${rule.entry}"`);
+        return 0;
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    case 'rules': {
+      const rules = new ApprovalQueue(db).standingRules.list();
+      if (rules.length) {
+        log('standing rules (auto-approved):');
+        for (const r of rules) {
+          log(`  ${r.entry}`);
+          log(`    ${r.consequence}, granted by ${r.createdBy ?? 'unknown'} on ${new Date(r.createdAt).toISOString()}`);
+        }
+      } else {
+        log('no standing rules — every outbound action asks');
+      }
+
+      log('');
+      log('grantable actions from the current config:');
+      let any = false;
+      for (const p of providers.publishers ?? []) {
+        const consequence = consequenceOf(p);
+        const target = p.targetFor?.();
+        if (!isGrantable(consequence) || !target) {
+          log(`  publish:${p.platform.padEnd(18)} — never (${consequence})`);
+          continue;
+        }
+        any = true;
+        log(`  publish:${p.platform.padEnd(18)} ${target}   (${consequence})`);
+      }
+      if (!any) log('  (none — nothing configured can be pre-approved)');
+      return 0;
+    }
+
+    case 'revoke': {
+      const entry = rest.join(' ');
+      if (!entry) return fail('usage: mediabot revoke "<action> <target>"');
+      const removed = new ApprovalQueue(db).standingRules.revoke(entry);
+      log(removed ? `revoked: ${entry}` : `no such rule: ${entry}`);
+      return removed ? 0 : 1;
     }
 
     case 'status': {
