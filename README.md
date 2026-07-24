@@ -90,7 +90,34 @@ pnpm cli queue              # 看待审内容
 pnpm cli approve <id>       # 批准并发布
 pnpm cli metrics            # 当前可采集的指标
 pnpm cli goals              # 目标进度
+pnpm cli rules              # 常驻授权，以及哪些目标可以授权
 ```
+
+### 在手机上审批
+
+配好 owner 之后，待审的草稿会**一条一条**推到 Telegram，直接回复「批准」或「拒绝」就生效，不用打开控制台：
+
+```json
+"notify": {
+  "telegramBotToken": "secret:telegram-token",
+  "telegramChatId": "12345",
+  "telegramOwnerId": "12345"
+}
+```
+
+`telegramOwnerId` 是你的**数字 user id**（问 @userinfobot）。**没配就整个功能关闭**——推送通常落在群里，认名字不认 id 意味着群里任何人都能以你的名义发东西。回复只能批准/拒绝，**改文案仍然要去控制台**：远程改文相当于把没人重读过的内容重新签名。
+
+### 让它别再问同一件事
+
+```bash
+pnpm cli rules                                    # 看哪些能授权
+pnpm cli allow publish:blog-tech /path/to/blog#src/content/blog
+pnpm cli revoke "publish:blog-tech /path/to/blog#src/content/blog"
+```
+
+授权**绑定到确切目标**，不是绑定到平台名——配置改指向别的仓库，规则自动失效。
+
+**不可撤回的平台永远不能授权**（小红书 / X / B站 / Telegram / 抖音…），即使手动往数据库里塞一条规则也会被拒。可授权的只有三类：写本地文件（dry-run）、git 可回滚（blog）、只建草稿（公众号）。
 
 ---
 
