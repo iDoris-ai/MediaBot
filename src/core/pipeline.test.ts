@@ -219,6 +219,33 @@ test('every stage is recorded in runs', async () => {
   assert.equal((db.prepare(`SELECT COUNT(*) c FROM runs WHERE state='running'`).get() as any).c, 0);
 });
 
+test('clearing the schedule on approval publishes a parked item immediately (--now)', async () => {
+  let clock = Date.UTC(2026, 6, 1);
+  const db = open(':memory:');
+  const pipeline = new Pipeline(
+    db,
+    {
+      composer: new ClaudeComposer({ runner: async () => ({ text: COMPOSED, transcript: '' }) }),
+      publishers: [new DryRunPublisher({ outDir: outDir() })],
+    },
+    () => clock,
+  );
+
+  const { variants } = await pipeline.compose({ ...brief, sources: [] });
+  const { approvals } = await pipeline.propose(variants, { scheduledFor: new Date(clock + 86_400_000) });
+
+  // Approved as scheduled: not due yet.
+  pipeline.queue.approve(approvals[0]!.id);
+  assert.equal((await pipeline.executeDue()).published.length, 0);
+
+  // Re-approving with scheduledFor: null is what `approve --now` does; the item
+  // must go out on this tick even though its original slot is a day away.
+  // (approve() only runs on pending items, so reset for the test.)
+  db.prepare(`UPDATE approvals SET state='pending' WHERE id=?`).run(approvals[0]!.id);
+  pipeline.queue.approve(approvals[0]!.id, { scheduledFor: null });
+  assert.equal((await pipeline.executeDue()).published.length, 1);
+});
+
 test('a standing rule carries a proposal straight to approved', async () => {
   const { db, pipeline, dir } = build();
   const target = path.resolve(dir, 'dryrun');

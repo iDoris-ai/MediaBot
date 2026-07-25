@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from 'fs';
-import { loadConfig } from './config';
+import { configPath, home, loadConfig } from './config';
 import { open } from './core/db';
 import { Pipeline } from './core/pipeline';
 import { ApprovalQueue } from './core/approval';
@@ -45,6 +45,7 @@ import type { EngagementProvider, PublisherProvider } from './contracts';
 const USAGE = `mediabot — media operations agent
 
 Usage:
+  mediabot init [--force]         Write a starter ~/.mediabot/config.json
   mediabot run [--dry] [--auto]   Ingest → compose → validate → queue for approval
   mediabot queue [state]          List approvals (default: pending)
   mediabot approve <id> [--now]   Approve a queued item, then publish if due
@@ -74,6 +75,10 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
+
+  // `init` must work before there is any config to load, and must not touch the
+  // database — it is the very first thing a new user runs.
+  if (command === 'init') return initConfig(rest.includes('--force'));
 
   const config = loadConfig();
   const db = open(config.dbFile);
@@ -138,8 +143,11 @@ async function main(argv: string[]): Promise<number> {
       const id = rest[0];
       if (!id) return fail('approve needs an approval id');
       const pipeline = new Pipeline(db, providers);
-      pipeline.queue.approve(id, { by: 'cli' });
-      log(`approved ${id}`);
+      // `--now` clears any schedule so a draft parked for later goes out on this
+      // tick; without it, an item scheduled for the future stays parked.
+      const now = rest.includes('--now');
+      pipeline.queue.approve(id, { by: 'cli', ...(now ? { scheduledFor: null } : {}) });
+      log(`approved ${id}${now ? ' (now)' : ''}`);
 
       const exec = await pipeline.executeDue();
       for (const p of exec.published) log(`published ${p.postId}${p.url ? ` → ${p.url}` : ''}`);
@@ -526,6 +534,52 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
 function preview(s: string, n = 100): string {
   const flat = s.replace(/\s+/g, ' ').trim();
   return flat.length > n ? `${flat.slice(0, n)}…` : flat;
+}
+
+/**
+ * Write a starter config so `run` produces something on the very first try.
+ *
+ * The defaults are deliberately safe: a real public feed for material, and
+ * `dryrun` as the only target, so a new user sees the whole loop end to end
+ * before wiring up any account that can actually post. Refuses to clobber an
+ * existing config unless asked, because that file holds a person's setup.
+ */
+function initConfig(force: boolean): number {
+  const p = configPath();
+  if (fs.existsSync(p) && !force) {
+    return fail(`config already exists at ${p} — edit it, or pass --force to overwrite`);
+  }
+
+  const starter = {
+    targetPlatforms: ['dryrun'],
+    locale: 'zh-CN',
+    style: '务实、有具体数字、不打鸡血',
+    feeds: ['https://hnrss.org/frontpage'],
+    searchPlatforms: [],
+    keywords: ['AI Agent', '开源工具'],
+    generateImages: false,
+    schedule: {
+      ingest: '0 8 * * *',
+      publish: '*/5 * * * *',
+      monitor: '15 * * * *',
+      briefing: '30 7 * * *',
+      engage: '*/30 * * * *',
+      goals: '0 9 * * 1',
+    },
+  };
+
+  fs.mkdirSync(home(), { recursive: true });
+  fs.writeFileSync(p, `${JSON.stringify(starter, null, 2)}\n`);
+
+  log(`wrote ${p}`);
+  log('');
+  log('It targets `dryrun` only — nothing is posted anywhere yet.');
+  log('Try the whole loop with no accounts:');
+  log('  mediabot run --dry --auto     # fetch → compose → "publish" to ~/.mediabot/out/');
+  log('  mediabot status');
+  log('');
+  log('Then add a real platform in the config and see docs/README for each one.');
+  return 0;
 }
 
 function log(msg: string, level: 'info' | 'warn' = 'info'): void {

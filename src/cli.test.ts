@@ -148,3 +148,32 @@ test('help is shown with no arguments and unknown commands exit non-zero', async
   assert.match((await run([], env)).stdout, /Usage:/);
   await assert.rejects(run(['bogus'], env), /unknown command/);
 });
+
+test('init writes a runnable starter config and refuses to clobber it', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mediabot-init-'));
+  const env = { ...process.env, MEDIABOT_HOME: home };
+
+  const first = await run(['init'], env);
+  assert.match(first.stdout, /wrote .*config\.json/);
+
+  const cfg = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+  assert.deepEqual(cfg.targetPlatforms, ['dryrun'], 'a fresh user posts nowhere real yet');
+  assert.ok(Array.isArray(cfg.feeds) && cfg.feeds.length, 'ships a feed so the first run has material');
+
+  // A second init must not overwrite a config someone may have edited.
+  await assert.rejects(run(['init'], env), /already exists/);
+  const forced = await run(['init', '--force'], env);
+  assert.match(forced.stdout, /wrote/);
+});
+
+test('approve --now is accepted, labelled, and publishes', async () => {
+  await withFeedServer(async (feedUrl) => {
+    const { env } = setup(feedUrl);
+    await run(['run'], env);
+    const id = (await run(['queue'], env)).stdout.trim().split(/\s+/)[0]!;
+
+    const approved = await run(['approve', id, '--now'], env);
+    assert.match(approved.stdout, /approved .* \(now\)/);
+    assert.match(approved.stdout, /published post_/);
+  });
+});
