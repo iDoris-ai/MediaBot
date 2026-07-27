@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_DAILY_LIMITS, OutreachRunner, buildOutreachPrompt } from './outreach';
+import { EngagementRunner } from './engagement';
 import { ApprovalQueue } from './approval';
 import { open } from './db';
 import type { EngagementProvider, SourceItem } from '../contracts';
@@ -87,6 +88,68 @@ test('the daily cap is enforced from the database', async () => {
   const res = await r.propose([target('new')]);
   assert.equal(res.queued.length, 0);
   assert.match(res.skipped[0]!.reason, /daily limit/);
+});
+
+test('a comment sent through the engagement executor counts against the cap', async () => {
+  // The regression: outbound comments are queued as kind='reply' and sent by
+  // EngagementRunner, which used to record them as kind='reply' — a row the
+  // outreach cap never queries. So the cap counted nothing and never throttled.
+  const clock = { t: NOW };
+  const db = open(':memory:');
+  const p = provider('xiaohongshu');
+
+  const outreach = new OutreachRunner(db, {
+    providers: [p],
+    now: () => clock.t,
+    random: () => 0,
+    claude: async () => ({ text: '显存主要卡在 KV cache。', transcript: '' }),
+  });
+  const engagement = new EngagementRunner(db, { providers: [p], now: () => clock.t });
+  const queue = new ApprovalQueue(db, () => clock.t);
+
+  const { queued } = await outreach.propose([target('a')]);
+  assert.equal(queued.length, 1);
+  assert.equal(outreach.sentToday('xiaohongshu'), 0, 'nothing sent yet');
+
+  queue.approve(queued[0]!);
+  const res = await engagement.sendApproved();
+  assert.equal(res.sent.length, 1, 'the approved outbound comment goes out');
+
+  // The cap must now see it — the whole point of the fix.
+  assert.equal(outreach.sentToday('xiaohongshu'), 1);
+  assert.equal(outreach.remainingToday('xiaohongshu'), DEFAULT_DAILY_LIMITS['xiaohongshu']! - 1);
+
+  // And the same post is never commented on again, now that the send is on record.
+  clock.t += 30 * 60_000;
+  const again = await outreach.propose([target('a')]);
+  assert.match(again.skipped[0]!.reason, /already commented/);
+});
+
+test('unapproved drafts count against the cap so a batch approval cannot exceed it', async () => {
+  const clock = { t: NOW };
+  const db = open(':memory:');
+  const r = new OutreachRunner(db, {
+    providers: [provider('reddit')],
+    now: () => clock.t,
+    minGapMs: 0,
+    maxGapMs: 0,
+    claude: async () => ({ text: '具体补充', transcript: '' }),
+  });
+  const cap = DEFAULT_DAILY_LIMITS['reddit']!; // 5
+
+  // Queue exactly the cap's worth of drafts across several proposes; none sent.
+  const targets = Array.from({ length: cap + 3 }, (_, i) =>
+    target(`r${i}`, { id: `reddit:r${i}`, providerId: 'reddit' }),
+  );
+  let queued = 0;
+  for (const t of targets) {
+    queued += (await r.propose([t])).queued.length;
+    clock.t += 1000;
+  }
+
+  assert.equal(queued, cap, 'queuing stops at the cap even before anything is approved');
+  assert.equal(r.remainingToday('reddit'), 0);
+  assert.equal(new ApprovalQueue(db).list('pending').length, cap);
 });
 
 test('the cap is per platform, not global', async () => {

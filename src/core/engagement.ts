@@ -200,17 +200,30 @@ export class EngagementRunner {
         continue;
       }
 
-      const runId = this.startRun('reply', provider.info.id, payload.commentId);
+      // Outbound comments (commenting on a stranger's post) and inbound replies
+      // (answering a comment on our own post) share this execution path but are
+      // counted separately: OutreachRunner's daily cap and gap throttle only
+      // look at kind='outreach' rows keyed by platform. Recording an outbound
+      // send as kind='reply' — as this used to — left that cap counting nothing,
+      // so it never throttled. The run must land where the cap looks.
+      const isOutbound = payload.outbound === true;
+      const runId = isOutbound
+        ? this.startRun('outreach', payload.platform, payload.targetId)
+        : this.startRun('reply', provider.info.id, payload.commentId);
       try {
         const res = await provider.reply(payload.replyTarget, payload.body, {
           accountId: payload.accountId,
           ...(opts.dryRun ? { dryRun: true } : {}),
         });
-        this.db
-          .prepare(`UPDATE comments SET state = 'replied', reply_platform_id = ? WHERE id = ?`)
-          .run(res.platformReplyId, payload.commentId);
+        // Inbound replies mark the comment answered; outbound comments have no
+        // comment row of ours to update.
+        if (!isOutbound && payload.commentId) {
+          this.db
+            .prepare(`UPDATE comments SET state = 'replied', reply_platform_id = ? WHERE id = ?`)
+            .run(res.platformReplyId, payload.commentId);
+        }
 
-        out.sent.push({ approvalId: approval.id, commentId: payload.commentId });
+        out.sent.push({ approvalId: approval.id, commentId: payload.commentId ?? payload.targetId });
         this.finishRun(runId, 'ok', res.platformReplyId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
