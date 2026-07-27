@@ -10,6 +10,7 @@ import { buildCollectors, localCollectors } from './core/metrics';
 import { RssSourceProvider } from './providers/source/rss';
 import { CliSearchSource, type SearchPlatform } from './providers/source/cli-search';
 import { McpSource } from './providers/source/mcp';
+import { RedditSource } from './providers/source/reddit';
 import { ClaudeComposer } from './providers/composer/claude';
 import { FluxImageComposer } from './providers/composer/flux-image';
 import { TtsComposer } from './providers/composer/tts';
@@ -20,6 +21,10 @@ import { XiaohongshuPublisher } from './providers/publisher/xiaohongshu';
 import { TwitterPublisher } from './providers/publisher/twitter';
 import { WeChatMpPublisher } from './providers/publisher/wechat-mp';
 import { BilibiliPublisher } from './providers/publisher/bilibili';
+import { BLOG_SCHEMAS, BlogPublisher } from './providers/publisher/blog';
+import { TelegramPublisher } from './providers/publisher/telegram';
+import { TelegramEngagement } from './providers/engagement/telegram';
+import { RedditEngagement } from './providers/engagement/reddit';
 import {
   BrowserPublisher,
   UPLOAD_PROFILE_TEMPLATES,
@@ -164,9 +169,14 @@ async function main(argv: string[]): Promise<number> {
         const missing = missingSelectors(merged);
         log(`${name.padEnd(18)} ${merged.verified ? 'verified' : 'UNVERIFIED'}`);
         log(`    upload: ${merged.uploadUrl}`);
-        if (missing.length) log(`    missing selectors: ${missing.join(', ')}`);
-        if (!merged.verified) {
-          log(`    fill selectors in config.browserProfiles.${name}, then set "verified": true`);
+        if (missing.length) {
+          log(`    missing selectors: ${missing.join(', ')}`);
+          log(`    fill them in config.browserProfiles.${name}, then set "verified": true`);
+        } else if (!merged.verified) {
+          // Distinct from missing: the selectors are present but unproven, and
+          // saying "fill them in" would send the user looking for nothing.
+          log(`    selectors present but unproven — open the page above, confirm each one,`);
+          log(`    then set config.browserProfiles.${name}.verified = true`);
         }
       }
       return 0;
@@ -300,14 +310,39 @@ const REAL_PUBLISHERS: Record<string, () => PublisherProvider> = {
 export const REAL_ENGAGEMENT: Record<string, () => EngagementProvider> = {
   xiaohongshu: () => new XiaohongshuEngagement(),
   twitter: () => new TwitterEngagement(),
+  reddit: () => new RedditEngagement(),
 };
+
+/**
+ * Telegram needs config (token + chat), so it is built separately from the
+ * zero-config providers above. Secrets are resolved by the caller.
+ */
+export function buildTelegram(
+  cfg: NonNullable<ReturnType<typeof loadConfig>['telegram']>,
+): { publisher: PublisherProvider; engagement: EngagementProvider } {
+  return {
+    publisher: new TelegramPublisher({ token: cfg.token, chatId: cfg.chatId }),
+    engagement: new TelegramEngagement({
+      token: cfg.token,
+      chatIds: cfg.watchChatIds ?? [cfg.chatId],
+      trigger: {
+        ...(cfg.keywords ? { keywords: cfg.keywords } : {}),
+        ...(cfg.respondToCommands !== undefined ? { respondToCommands: cfg.respondToCommands } : {}),
+      },
+    }),
+  };
+}
 
 /** Engagement providers for the platforms currently targeted. */
 export function buildEngagement(config: ReturnType<typeof loadConfig>): EngagementProvider[] {
-  return config.targetPlatforms
+  const out = config.targetPlatforms
     .map((p) => REAL_ENGAGEMENT[p])
     .filter((f): f is () => EngagementProvider => Boolean(f))
     .map((f) => f());
+  if (config.targetPlatforms.includes('telegram') && config.telegram) {
+    out.push(buildTelegram(config.telegram).engagement);
+  }
+  return out;
 }
 
 /** Browser publishers, built only from profiles the user marked verified. */
@@ -340,6 +375,26 @@ export function buildComposer(config: ReturnType<typeof loadConfig>) {
     : new ClaudeComposer();
 }
 
+/** Blog publishers, one per configured target. */
+export function buildBlogPublishers(
+  config: ReturnType<typeof loadConfig>,
+): Record<string, () => PublisherProvider> {
+  const out: Record<string, () => PublisherProvider> = {};
+  for (const [platform, cfg] of Object.entries(config.blogs ?? {})) {
+    out[platform] = () =>
+      new BlogPublisher({
+        platform,
+        repo: cfg.repo,
+        contentDir: cfg.contentDir,
+        schema: BLOG_SCHEMAS[cfg.schema ?? 'blog']!,
+        ...(cfg.urlPattern ? { urlPattern: cfg.urlPattern } : {}),
+        ...(cfg.commit !== undefined ? { commit: cfg.commit } : {}),
+        ...(cfg.push !== undefined ? { push: cfg.push } : {}),
+      });
+  }
+  return out;
+}
+
 export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineProviders {
   return {
     sources: [
@@ -347,6 +402,16 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
       ...config.searchPlatforms.map(
         (p) => new CliSearchSource(p as SearchPlatform, { keywords: config.keywords }),
       ),
+      ...(config.reddit
+        ? [
+            new RedditSource({
+              keywords: config.keywords,
+              ...(config.reddit.subreddits ? { subreddits: config.reddit.subreddits } : {}),
+              ...(config.reddit.sort ? { sort: config.reddit.sort as any } : {}),
+              ...(config.reddit.time ? { time: config.reddit.time as any } : {}),
+            }),
+          ]
+        : []),
       ...config.mcpSources.map(
         (m) =>
           new McpSource({
@@ -365,7 +430,11 @@ export function buildProviders(config: ReturnType<typeof loadConfig>): PipelineP
     ],
     composer: buildComposer(config),
     publishers: config.targetPlatforms.map((platform) => {
-      const real = REAL_PUBLISHERS[platform] ?? buildBrowserPublishers(config)[platform];
+      if (platform === 'telegram' && config.telegram) return buildTelegram(config.telegram).publisher;
+      const real =
+        REAL_PUBLISHERS[platform] ??
+        buildBlogPublishers(config)[platform] ??
+        buildBrowserPublishers(config)[platform];
       return real ? real() : new DryRunPublisher({ platform, outDir: config.outDir });
     }),
   };

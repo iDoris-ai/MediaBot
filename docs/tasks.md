@@ -282,3 +282,80 @@ M0 骨架契约
 ```
 
 **M1 已完成（2026-07-24）——基础流程已跑通**——全链路可在无任何平台凭证的情况下端到端验证。
+
+---
+
+## M8 — 按验收标准补齐（2026-07-24 追加）
+
+依据 [`acceptance.md`](acceptance.md)，规格见 [`spec.md`](spec.md) 附录 A。
+
+### T8.1 `file` transport + Blog Publisher `[x]`
+**交付物**：`src/providers/publisher/blog.ts` —— 写 markdown 到 Astro content collection + git commit/push
+**接口变更**：`PublishTransport` 增加 `'file'`
+**验收**：契约测试通过；写入的 frontmatter 能被 Astro 解析；dry-run 不写文件不 commit；同一 slug 重复发布不覆盖已有文章而是报错
+**依据**：spec.md §A.4。**这是唯一允许审批后全自动的通道**——git 可撤回，误发一篇 blog 是 revert，误发一条小红书是永久的
+**验收结果**：✅ 15 测试通过
+**发现的关键约束**：两个 blog 是同一仓库的两个 collection（`blog` 技术 / `my` 生活），**各有不同的 category 枚举**。category 不在枚举里不是「这篇发不出去」，而是 **Astro 构建直接失败，整站文章一起挂**——所以枚举校验做在写文件之前，错误信息里列出允许值
+**其他保证**：同名 slug 拒绝覆盖已发布文章；git push 失败时**保留已写入的文章**（删掉「清理」会丢内容），报 retryable 让人工接手
+**契约套件抓到我自己的 bug**：声明了 `maxTextLength` 却没在 `validate()` 里执行——正是这个套件存在的意义
+
+### T8.2 Telegram Publisher + Engagement `[x]`
+**交付物**：`src/providers/publisher/telegram.ts` + `src/providers/engagement/telegram.ts`
+**验收**：契约测试双槽位通过；**群消息只在「被 @ / 命令 / 匹配关键词」时才回**，其余一律不回（必须有测试）；dry-run 不发送
+**参考**：`~/Dev/tools/telethon/CBots`（telethon 实现、命令分发、反广告准入）。**Bot API 走 HTTP 即可，不必引入 telethon**
+**依据**：spec.md §A.2
+**验收结果**：✅ 25 测试通过（双槽位契约 + 触发条件全覆盖）
+**核心约束已钉死**：普通群消息**不回**——只在「被 @ / 回复了 bot / 命令 / 关键词命中 / 私聊」时才进队列。**另外不回其他 bot**——两个 bot 互相 at 会无限循环
+**其他保证**：chat_id 来自配置而非生成内容（防止文案里的 chat_id 把帖子发到别的群）；Bot API 的 `ok:false`+HTTP 200 当失败处理；401 不重试（token 坏了重试没用）、403 被踢出群报 misconfigured（要人去重新加）
+**offset 策略**：只在成功拉取后前进。推进 offset 等于向 Telegram 确认收到，中途崩溃会永久丢消息——id 命名空间化让重读无害，所以宁可重读不可丢
+
+### T8.3 小红书视频 + 视频号 profile 填充 `[x]`
+**交付物**：把 spec.md §A.3 的实测 selector 填进 `UPLOAD_PROFILE_TEMPLATES`
+**接口变更**：`successIndicator` 支持 `url:` 前缀（两个平台都靠 URL 跳转判定成功，而非元素出现）
+**验收**：`mediabot profiles` 显示 selector 齐全；**`verified` 仍保持 false** —— selector 来自第三方仓库的观察，未经本人在真实登录态下验证，规则不破例
+**依据**：spec.md §A.3
+**验收结果**：✅ 364 测试全绿
+**接口扩展**：
+- `successIndicator` 支持 `url:` 前缀——**这两个平台都靠 URL 跳转确认成功，不渲染成功标记**。用等元素的方式会一直超时，然后把成功的发布记成失败
+- 新增 `loggedOutIndicator`（反向判定）——创作者后台通常是「出现登录框 = 未登录」，而不是标记已登录。两者都配时**反向的优先**：看到登录框是确凿的，而正向标记可能在鉴权完成前就渲染了
+**已填 selector**：`xiaohongshu-video`、`wechat-channels`（抖音/快手仍是占位符，我没有这两个后台的观察值）
+**`verified` 仍为 false，没有破例**——「看起来对」不等于「看着它跑通过」。一个为「看起来挺像」破例的规则就不再是规则了。`mediabot profiles` 现在会区分「缺 selector」和「selector 齐了但未验证」两种状态，后者不会再让你去找根本不缺的东西
+
+### T8.4 Reddit 单账号 Source + Engagement `[x]`
+**交付物**：`src/providers/source/reddit.ts`（`rdt search`）+ `src/providers/engagement/reddit.ts`（`rdt comment`）
+**验收**：契约测试通过；**不实现 upvote**（即使单账号，自动投票仍属 vote manipulation）；日限默认 5，低于其他平台
+**范围**：单个公开属于本人/组织的账号。多人设、自动点赞背书**不做**，理由见 acceptance.md §3
+**验收结果**：✅ 18 测试通过；真实 Reddit 抓取验证（r/selfhosted）
+**没实现 upvote，并有测试断言它不存在**——`rdt` 有投票能力，这里故意不接。自动投票即使单账号也属 vote manipulation，而且是 Reddit 反作弊最容易识别的行为
+**日限设为 5**，低于其他平台一半——Reddit 社区对营销的反应比别处激烈得多，且版主是按模式封人而非按单条内容
+**技术细节**：`rdt read` 返回嵌套 Listing，评论树要递归展开；`more` 类型是「还有 N 条」的占位符不是评论；Reddit id 带 `t1_` 类型前缀需要剥掉
+
+### T8.5 内容形态适配 `[x]`
+**交付物**：composer prompt 按平台注入形态要求（小红书重钩子和标签、公众号重结构、blog 重深度、X 重密度、Telegram 重简短）
+**验收**：同一 brief 产出的各平台 variant **不是同一份文案的复制**——测试断言任意两版的正文相似度低于阈值
+**依据**：acceptance.md §四.1，这是用户判断「好用」的第一条
+**验收结果**：✅ 408 测试全绿；真实 Claude 验证
+**实测产出**（同一 brief，四平台）：小红书 582 字第一人称钩子开头 / blog-tech 4066 字带 `##` 分节 / twitter 258 字结论前置 / reddit 2876 字**自动切英文**且用 `Context:` 开头（Reddit 惯例）。**两两相似度全部 < 0.1**
+**运行时兜底**：光在 prompt 里要求「要不同」是请求不是保证，所以加了字符三元组相似度检测，模型偷懒复制时会告警。用字符三元组而非词元——中文没有空格，词元法会把两段完全不同的中文判成一样
+
+**过程中修掉两个只有真跑才会暴露的 bug**：
+1. **围栏解析在嵌套代码块处截断**——技术 blog 正文必然带 ```bash 代码块，非贪婪正则在 JSON 字符串内部的第一个 ``` 就断了。改成逐个尝试候选闭合位置，用「能否解析成 JSON」本身来消歧
+2. **JSON 根本不适合装长文**——实测约 1/3 概率模型在字符串里写真实换行（`Invalid control character`）。改用分隔符格式 `<<<VARIANT platform=x>>> ... <<<END>>>`，正文不需要任何转义。改完连跑 5 次全成功（JSON 格式是 2/3）。**并且发现是我 prompt 自相矛盾**——开头写着「Reply with ONE fenced json block」，尾部才是新格式，模型听最前面那句
+
+### T8.6 端到端验收演练 `[x]`
+**依赖**：T8.1–T8.5
+**交付物**：一次真实全链路：抓取 → 生成多平台变体（含配图/成片）→ 审批队列 → dry-run 发布，产出可人工检查的报告
+**验收**：对照 acceptance.md §四 的五条标准逐条给出证据
+**交付物**：`scripts/acceptance-drill.ts`（`pnpm drill`，加 `--media` 含出图/配音/成片）——仓库里可重复运行的脚本，不是一次性验证。全程 dry-run，可安全重跑
+**实测结果**：
+- ✅ 多平台形态正确：5/5 平台产出，最高两两相似度 0.068（阈值 0.75），长度 185–6012 字
+- ✅ 各平台校验通过率：5/5 通过各自**真实**平台限制
+- ✅ 不出事故：未批准发布 0 条、重放发布 0 条、批准后被篡改 → 拒绝并退回复审
+- ⏳ 回复质量 / 每日耗时 / 账号安全：**这三条一次脚本运行判定不了**，是关于数周真实使用的主张，标成通过只是自欺
+
+**演练发现并修掉一个真实缺陷**：composer 不知道平台**硬限制**，生成的内容到校验才被拒——白烧一次模型调用，那个平台还静默没内容。首轮 5 个变体只过了 3 个（小红书标题超 20 字、Twitter 中文 283 字≈500 加权单位超 280）。把硬限制写进形态指引并排在语气之前后，变成 5/5
+**演练自身也修了一处**：原来用 dry-run publisher 的通用限制（2000 字），会把合法的 7000 字技术博客判为超长——测的是假限制。改成注入各平台真实限制
+
+### T8.7 提交 PR `[x]`
+**依赖**：T8.1–T8.6 全绿
+**交付物**：feature 分支 → PR 到 main，说明本轮交付、未完成项、以及需要用户实测的部分

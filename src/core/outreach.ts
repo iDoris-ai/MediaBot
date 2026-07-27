@@ -42,6 +42,9 @@ export const DEFAULT_DAILY_LIMITS: Record<string, number> = {
   twitter: 20,
   xiaohongshu: 10,
   bilibili: 10,
+  // Reddit communities react to marketing far more sharply than the others,
+  // and moderators act on patterns rather than individual posts.
+  reddit: 5,
 };
 
 export interface OutreachResult {
@@ -75,7 +78,22 @@ export class OutreachRunner {
 
   remainingToday(platform: string): number {
     const limit = this.opts.dailyLimits?.[platform] ?? DEFAULT_DAILY_LIMITS[platform] ?? 0;
-    return Math.max(0, limit - this.sentToday(platform));
+    // Count what is already committed for today, not only what has shipped.
+    // sendApproved() sends every approved item in one pass with no cap check of
+    // its own, so a pile of unapproved drafts that a human batch-approves would
+    // otherwise sail past the limit. Reserving capacity for pending drafts makes
+    // the cap a real ceiling rather than one that only holds if approvals are
+    // prompt.
+    return Math.max(0, limit - this.sentToday(platform) - this.pendingToday(platform));
+  }
+
+  /** Outbound drafts already queued today and still awaiting a decision. */
+  private pendingToday(platform: string): number {
+    const dayStart = startOfDay(this.now());
+    return this.approvals.list('pending', 500).filter((a) => {
+      const p = a.payload as any;
+      return p?.outbound === true && p?.platform === platform && a.createdAt >= dayStart;
+    }).length;
   }
 
   /** Has enough time passed since the last comment on this platform? */
@@ -197,6 +215,7 @@ function platformOf(item: SourceItem): string | null {
   if (providerId.startsWith('xhs')) return 'xiaohongshu';
   if (providerId.startsWith('twitter')) return 'twitter';
   if (providerId.startsWith('bili')) return 'bilibili';
+  if (providerId.startsWith('reddit')) return 'reddit';
   return null;
 }
 

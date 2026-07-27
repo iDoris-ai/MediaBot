@@ -12,7 +12,8 @@
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:conformance": "tsx src/testing/run-conformance.ts",
     "cli": "tsx src/cli.ts",
-    "daemon": "tsx src/daemon.ts"
+    "daemon": "tsx src/daemon.ts",
+    "drill": "tsx scripts/acceptance-drill.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

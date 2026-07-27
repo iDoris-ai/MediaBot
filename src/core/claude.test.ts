@@ -120,3 +120,40 @@ test('parseFencedJson returns null on malformed JSON rather than throwing', () =
   assert.equal(parseFencedJson('```json\n{ this is not json\n```'), null);
   assert.equal(parseFencedJson('plain prose'), null);
 });
+
+test('parses a JSON block whose payload contains fenced code', () => {
+  // The failure this guards, seen with real Claude: a blog-tech draft carries
+  // ```bash blocks inside its body string, and a first-closing-fence match
+  // truncates mid-string.
+  const output = [
+    'Here is the content:',
+    '```json',
+    '{"variants":[{"platform":"blog-tech","body":"Run this:\\n\\n```bash\\nsysctl iogpu\\n```\\n\\nThen restart."}]}',
+    '```',
+    'Hope that helps.',
+  ].join('\n');
+
+  const parsed = parseFencedJson<{ variants: Array<{ body: string }> }>(output);
+  assert.ok(parsed, 'a body containing code fences must still parse');
+  assert.match(parsed!.variants[0]!.body, /sysctl iogpu/);
+  assert.match(parsed!.variants[0]!.body, /Then restart\./, 'the block is not truncated at the inner fence');
+});
+
+test('parses a payload containing several fenced blocks', () => {
+  const output =
+    '```json\n' +
+    '{"a":"first ```py\\nx=1\\n``` and second ```sh\\nls\\n``` done"}\n' +
+    '```';
+  const parsed = parseFencedJson<{ a: string }>(output);
+  assert.ok(parsed);
+  assert.match(parsed!.a, /done$/);
+});
+
+test('malformed JSON still yields null rather than a wrong parse', () => {
+  assert.equal(parseFencedJson('```json\n{ broken ``` more ```\n```'), null);
+});
+
+test('trailing prose after the block does not break parsing', () => {
+  const parsed = parseFencedJson<{ ok: boolean }>('```json\n{"ok":true}\n```\n\nLet me know!');
+  assert.deepEqual(parsed, { ok: true });
+});

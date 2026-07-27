@@ -290,3 +290,131 @@ pnpm test:conformance --provider ./my-provider.ts --slot publisher
 - **语言**：TypeScript strict，CommonJS + tsx（与 Heinu1 一致）
 - **DoD**：类型检查通过 + 单测通过 + 契约测试通过（涉及 provider 时）+ 文档同步更新
 - **CI**：GitHub Actions —— typecheck、unit、conformance（dry-run providers）
+
+---
+
+# 附录 A：M8 能力扩展规格（2026-07-24 追加）
+
+依据 [`acceptance.md`](acceptance.md) 的用户验收标准倒推。
+
+## A.1 新增 transport
+
+`PublishTransport` 增加一个取值：
+
+```typescript
+type PublishTransport = 'api' | 'cli' | 'browser' | 'extension' | 'file';
+```
+
+`file` —— 产物是写进本地仓库的文件（blog 的 markdown），发布动作 = 写文件 + git commit + push。
+它和其他 transport 的本质区别：**可撤回**。所以 blog publisher 是唯一允许在审批后自动完成全流程的通道。
+
+## A.2 Telegram：一个平台，两个槽位
+
+Telegram 群机器人同时落在两个契约上，不需要新接口：
+
+| 需求 | 落到哪个槽位 | 说明 |
+|---|---|---|
+| 群内定时发信息 | `PublisherProvider` | `platform: 'telegram'`，`publish()` = 发群消息 |
+| 自动回复群里的信息 | `EngagementProvider` | `listComments()` = 拉未读群消息，`reply()` = 回复某条 |
+
+**数据结构复用**：群消息映射成 `Comment`，`postId` 用群 id，`id` 用 `telegram:<chat_id>:<message_id>`。
+
+**关键约束**：群里自动回复的触发面比帖子评论大得多——不能所有消息都回。触发条件必须显式：
+- 被 @ 提及
+- 命令消息（`/xxx`）
+- 匹配预设关键词
+
+**其余消息一律不回**，且这条要有测试。一个逢消息必回的群机器人会被踢出群。
+
+## A.3 小红书视频 / 视频号：填充已有的 browser-publisher
+
+不需要新代码结构——T2.6 的 `BrowserPublisher` 就是为此设计的，现在补上实测 selector。
+
+**小红书视频**（`creator.xiaohongshu.com`）：
+
+| 字段 | 值 |
+|---|---|
+| uploadUrl | `https://creator.xiaohongshu.com/publish/publish?from=homepage&target=video` |
+| fileInput | `input[type="file"]` |
+| titleInput | `input[placeholder*="填写标题"]`（≤20 字） |
+| bodyInput | `p[data-placeholder*="输入正文描述"]` |
+| successIndicator | URL 匹配 `**/publish/success?**` |
+| loginUrl | `https://creator.xiaohongshu.com` |
+| 未登录标志 | 出现 `div[class*='login-box']` |
+
+**视频号**（`channels.weixin.qq.com`）：
+
+| 字段 | 值 |
+|---|---|
+| uploadUrl | `https://channels.weixin.qq.com/platform/post/create` |
+| fileInput | `input[type="file"]` |
+| bodyInput | `div.input-editor` |
+| publishButton | `div.form-btns button:has-text("发表")` |
+| draftButton | `div.form-btns button:has-text("保存草稿")` |
+| successIndicator | URL 匹配 `**/post/list**` |
+| 未登录标志 | `div.title-name:has-text("微信小店")` 或出现「扫码登录」 |
+
+**selector 来源说明**：观察自 `dreammis/social-auto-upload` 与 `Stevewu422/auto-weixin-video-skill`。两者均无 LICENSE，因此**只取 selector 这一事实**（某第三方页面的 DOM 结构是客观事实，非该作者的创作表达），实现完全自写。仍然遵守「未经本人实测不设 `verified: true`」的规则——这些值需要在真实登录态下验证一次。
+
+**成功判定改为 URL 匹配**：现有 `successIndicator` 只支持元素选择器，需扩展为支持 `url:` 前缀。
+
+## A.4 Blog 发布（技术 / 生活）
+
+**transport**: `file`
+
+流程：
+```
+DraftVariant → frontmatter + markdown → 写入 <repo>/src/content/blog/<slug>.md
+            → git add / commit / push → 返回预期 URL
+```
+
+**数据结构**（`variant.meta`）：
+```typescript
+{
+  repo: string;            // 仓库路径
+  collection?: string;     // 默认 'blog'
+  slug?: string;           // 缺省从标题生成
+  frontmatter?: Record<string, unknown>;  // 合并进 YAML 头
+  urlPattern?: string;     // 例如 'https://blog.x.cv/blog/{slug}/'
+}
+```
+
+**为什么它可以自动完成全流程**：git 可撤回。误发一篇 blog 是 `git revert` + 重新部署；误发一条小红书是永久的。这个差别决定了审批之后的自动化程度可以不同。
+
+## A.5 Reddit 单账号
+
+**明确范围**：一个公开属于本人/组织的账号。**不做多人设、不做自动点赞背书**（理由见 acceptance.md §3）。
+
+| 需求 | 槽位 | 实现 |
+|---|---|---|
+| 搜索相关讨论 | `SourceProvider` | `rdt search` |
+| 读帖子和评论 | `SourceProvider` | `rdt read` |
+| 起草回复 | 复用 `EngagementRunner` | 走同一审批闸门 |
+| 发表评论 | `EngagementProvider` | `rdt comment` |
+
+**额外约束**（Reddit 社区对营销尤其敏感）：
+- 日限比其他平台更低（默认 5）
+- prompt 中必须要求：只在能提供具体信息时回复，涉及自身产品时主动披露身份
+- 不实现 `upvote`——即使单账号，自动投票也属于 vote manipulation
+
+## A.6 上下游衔接
+
+```
+Source（rdt search / xhs search / twitter search / RSS / MCP）
+   ↓ source_items
+Compose（Claude 文案 + FLUX 配图 + TTS 旁白 + ffmpeg 成片）
+   ↓ draft_variants（每平台一版）
+Validate（各 publisher 的 limits）
+   ↓
+Approval（唯一闸门）
+   ↓
+Publish
+   ├── file      → blog（可撤回，审批后全自动）
+   ├── api       → 公众号草稿 / Telegram 群消息
+   ├── cli       → 小红书图文 / X / B站动态 / Reddit 评论
+   └── browser   → 小红书视频 / 视频号 / 抖音 / 快手
+   ↓ posts
+Engage（评论轮询 → 起草 → 审批 → 回复）
+   ↓ comments
+Goals（指标采集 → 复盘 → 回测）
+```

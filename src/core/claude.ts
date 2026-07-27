@@ -171,26 +171,62 @@ export function runClaude(prompt: string, opts: ClaudeOptions = {}): Promise<Cla
 /**
  * Extract the first fenced code block with the given tag from model output.
  *
- * Composers ask Claude for a ```json block; models routinely wrap it in prose,
- * so callers must never JSON.parse the raw output directly.
+ * Returns the shortest block, which is right for prose but wrong when the block
+ * itself contains fences — see `parseFencedJson`, which callers should prefer
+ * for structured output.
  */
 export function extractFencedBlock(text: string, tag = 'json'): string | null {
-  const fence = new RegExp('```' + tag + '\\s*\\n([\\s\\S]*?)```', 'i');
-  const m = fence.exec(text);
-  if (m && m[1] !== undefined) return m[1].trim();
-
-  // Fall back to a bare ``` block, which models emit when the tag is omitted.
-  const bare = /```\s*\n([\s\S]*?)```/.exec(text);
-  return bare && bare[1] !== undefined ? bare[1].trim() : null;
+  const candidates = fencedCandidates(text, tag);
+  return candidates.length ? candidates[0]! : null;
 }
 
-/** Parse a fenced JSON block, returning null instead of throwing. */
+/**
+ * Parse a fenced JSON block, returning null instead of throwing.
+ *
+ * A naive "first opening fence to first closing fence" match breaks the moment
+ * the JSON *contains* a fence — and it does, constantly: any draft for a
+ * technical blog carries ```bash blocks inside its body string. So each
+ * possible closing fence is tried in turn and the first one that parses wins.
+ * Only the true end of the block yields valid JSON, which makes the parse
+ * itself the disambiguator.
+ */
 export function parseFencedJson<T = unknown>(text: string, tag = 'json'): T | null {
-  const block = extractFencedBlock(text, tag);
-  if (block === null) return null;
-  try {
-    return JSON.parse(block) as T;
-  } catch {
-    return null;
+  for (const candidate of fencedCandidates(text, tag)) {
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      // This closing fence was inside the payload; try the next one.
+    }
   }
+  return null;
+}
+
+/**
+ * Every plausible block body, shortest first: the text between the opening
+ * fence and each subsequent closing fence.
+ */
+function fencedCandidates(text: string, tag: string): string[] {
+  const open = findOpeningFence(text, tag);
+  if (open === null) return [];
+
+  const out: string[] = [];
+  const closing = /```/g;
+  closing.lastIndex = open;
+
+  let m: RegExpExecArray | null;
+  while ((m = closing.exec(text)) !== null) {
+    const body = text.slice(open, m.index).trim();
+    if (body) out.push(body);
+  }
+  return out;
+}
+
+/** Index just past the opening fence, preferring the tagged form. */
+function findOpeningFence(text: string, tag: string): number | null {
+  const tagged = new RegExp('```' + tag + '[^\\S\\n]*\\n', 'i').exec(text);
+  if (tagged) return tagged.index + tagged[0].length;
+
+  // Models sometimes omit the tag; fall back to a bare fence.
+  const bare = /```[^\S\n]*\n/.exec(text);
+  return bare ? bare.index + bare[0].length : null;
 }

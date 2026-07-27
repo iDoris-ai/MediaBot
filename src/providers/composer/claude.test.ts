@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ClaudeComposer, buildPrompt } from './claude';
+import { ClaudeComposer, buildPrompt, parseVariants, parseDelimitedVariants } from './claude';
 import { runConformance } from '../../testing/conformance';
 import { ProviderError } from '../../contracts';
 import type { ContentBrief } from '../../contracts';
@@ -16,14 +16,17 @@ const brief = (over: Partial<ContentBrief> = {}): ContentBrief => ({
   ...over,
 });
 
-const GOOD = `Here you go:
-\`\`\`json
-{"variants":[
-  {"platform":"xiaohongshu","title":"标题","body":"小红书正文","meta":{"tags":["a"]}},
-  {"platform":"linkedin","body":"LinkedIn body"}
-]}
-\`\`\`
-Hope that helps!`;
+const GOOD = `<<<VARIANT platform=xiaohongshu>>>
+TITLE: 标题
+TAGS: a
+BODY:
+小红书正文
+<<<END>>>
+
+<<<VARIANT platform=linkedin>>>
+BODY:
+LinkedIn body
+<<<END>>>`;
 
 test('parses variants out of a fenced block wrapped in prose', async () => {
   const c = new ClaudeComposer({ runner: stub(GOOD) });
@@ -137,4 +140,65 @@ test('passes the composer conformance suite', async () => {
     report.passed,
     report.checks.filter((x) => !x.ok).map((x) => `${x.name}: ${x.detail}`).join('\n'),
   );
+});
+
+test('parses the delimiter format, including bodies with code fences', () => {
+  // The real failure this format exists to avoid: JSON requires escaping every
+  // newline in a long body, and the model got that wrong about a third of the
+  // time. Here nothing needs escaping.
+  const output = `<<<VARIANT platform=blog-tech>>>
+TITLE: 在 Mac 上跑本地模型
+TAGS: 本地部署, Ollama
+BODY:
+先查内存上限：
+
+\`\`\`bash
+sysctl iogpu.wired_limit_mb
+\`\`\`
+
+然后重启即可。
+<<<END>>>
+
+<<<VARIANT platform=twitter>>>
+BODY:
+决定性因素是内存，不是芯片型号。
+<<<END>>>`;
+
+  const parsed = parseVariants(output)!;
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0]!.platform, 'blog-tech');
+  assert.equal(parsed[0]!.title, '在 Mac 上跑本地模型');
+  assert.deepEqual((parsed[0]!.meta as any).tags, ['本地部署', 'Ollama']);
+  assert.match(parsed[0]!.body!, /sysctl iogpu/, 'code fences inside the body survive');
+  assert.match(parsed[0]!.body!, /然后重启即可。$/, 'the body is not truncated at the inner fence');
+  assert.equal(parsed[1]!.title, undefined, 'TITLE is optional');
+});
+
+test('a body containing real newlines needs no escaping', () => {
+  const parsed = parseVariants(`<<<VARIANT platform=x>>>
+BODY:
+第一段。
+
+第二段，带"引号"和 \\ 反斜杠。
+<<<END>>>`)!;
+  assert.match(parsed[0]!.body!, /第一段。\n\n第二段/);
+  assert.match(parsed[0]!.body!, /"引号"/);
+});
+
+test('a block with no BODY marker is skipped rather than half-parsed', () => {
+  assert.deepEqual(parseDelimitedVariants('<<<VARIANT platform=x>>>\nTITLE: only a title\n<<<END>>>'), []);
+});
+
+test('JSON output is still accepted as a fallback', () => {
+  const parsed = parseVariants('```json\n{"variants":[{"platform":"twitter","body":"short"}]}\n```')!;
+  assert.equal(parsed[0]!.platform, 'twitter');
+});
+
+test('output in neither format yields null', () => {
+  assert.equal(parseVariants('I could not do that, sorry.'), null);
+});
+
+test('tags accept both ASCII and full-width commas', () => {
+  const parsed = parseVariants('<<<VARIANT platform=x>>>\nTAGS: #一, 二，三\nBODY:\nb\n<<<END>>>')!;
+  assert.deepEqual((parsed[0]!.meta as any).tags, ['一', '二', '三']);
 });

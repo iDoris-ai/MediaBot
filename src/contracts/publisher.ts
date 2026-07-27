@@ -17,6 +17,7 @@ export interface PublisherProvider {
    *   cli       — an external command-line tool run as a subprocess
    *   browser   — Playwright + persisted cookies (first login needs a GUI)
    *   extension — routed through the MultiPost browser extension
+   *   file      — written into a local repository and committed
    */
   readonly transport: PublishTransport;
   readonly limits: PlatformLimits;
@@ -30,7 +31,7 @@ export interface PublisherProvider {
   publish(variant: DraftVariant, options: PublishOptions): Promise<PublishResult>;
 }
 
-export type PublishTransport = 'api' | 'cli' | 'browser' | 'extension';
+export type PublishTransport = 'api' | 'cli' | 'browser' | 'extension' | 'file';
 
 export interface AuthState {
   ok: boolean;

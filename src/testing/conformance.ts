@@ -190,7 +190,7 @@ async function checkPublisher(p: PublisherProvider, check: Check): Promise<void>
   await check('declares platform and transport', () => {
     assert(typeof p.platform === 'string' && p.platform.length > 0, 'platform required');
     assert(
-      ['api', 'cli', 'browser', 'extension'].includes(p.transport),
+      ['api', 'cli', 'browser', 'extension', 'file'].includes(p.transport),
       `unknown transport: ${p.transport}`,
     );
   });
