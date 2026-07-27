@@ -227,6 +227,22 @@ test('renderMarkdown escapes values that would break YAML', () => {
   assert.match(md, /ok: true/);
 });
 
+test('renderMarkdown drops keys that could inject YAML', () => {
+  // A composer-supplied key with a newline would otherwise open a new line or
+  // close the frontmatter block — a vector the human gate can't see, since the
+  // approval UI shows only title + body.
+  const md = renderMarkdown(
+    { title: 'ok', 'category\npublished: true': 'x', '---\ninjected': 'y', tags: ['a'] },
+    'body',
+  );
+  assert.match(md, /title: "ok"/);
+  assert.match(md, /tags: \["a"\]/);
+  assert.ok(!md.includes('published: true'), 'the smuggled YAML line must not appear');
+  assert.ok(!md.includes('injected'), 'a key that closes the block must be dropped');
+  // Exactly one frontmatter block: opening and closing fence only.
+  assert.equal(md.match(/^---$/gm)!.length, 2);
+});
+
 test('passes the publisher conformance suite', async () => {
   const p = publisher();
   const report = await runConformance(p, 'publisher');

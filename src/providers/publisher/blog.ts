@@ -278,10 +278,20 @@ export class BlogPublisher implements PublisherProvider {
   }
 }
 
+/** Frontmatter keys are plain identifiers; anything else is an injection. */
+const SAFE_FRONTMATTER_KEY = /^[A-Za-z0-9_-]+$/;
+
 /** YAML frontmatter plus body. */
 export function renderMarkdown(frontmatter: Record<string, unknown>, body: string): string {
   const lines = Object.entries(frontmatter)
     .filter(([, v]) => v !== undefined && v !== null)
+    // Values are escaped by renderYamlValue, but keys are interpolated raw. A
+    // composer-supplied key containing a newline (frontmatter comes partly from
+    // the model via meta.frontmatter) could open a new YAML line or close the
+    // block early — and the approval UI shows only title + body, never the
+    // frontmatter object, so a human could not catch it. Real keys are always
+    // simple identifiers, so drop anything else rather than emit it.
+    .filter(([k]) => SAFE_FRONTMATTER_KEY.test(k))
     .map(([k, v]) => `${k}: ${renderYamlValue(v)}`);
   return `---\n${lines.join('\n')}\n---\n\n${body.trim()}\n`;
 }
