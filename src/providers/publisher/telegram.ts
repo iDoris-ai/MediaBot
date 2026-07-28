@@ -1,6 +1,7 @@
 import fs from 'fs';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -47,6 +48,8 @@ export class TelegramPublisher implements PublisherProvider {
   readonly platform = 'telegram';
   readonly transport: PublishTransport = 'api';
   readonly limits = TELEGRAM_LIMITS;
+  /** A group message is read before it can be deleted. */
+  readonly consequence: Consequence = 'irreversible';
 
   private readonly api: TelegramApi;
   private readonly chatId: string;

@@ -8,11 +8,22 @@ import { CredentialStore } from './credentials';
 import { ProviderError } from '../contracts';
 
 /**
+ * The stand-in cookie value.
+ *
+ * It must contain characters that cannot appear in the encrypted blob, which
+ * is stored as hex. The old value was 'abc' — three hex digits — so the
+ * "never on disk in plaintext" assertion matched at random inside perfectly
+ * good ciphertext and failed roughly one run in a hundred. A security check
+ * that cries wolf gets muted, so the sentinel is now unmistakable.
+ */
+const COOKIE_SENTINEL = 'session-cookie-plaintext-sentinel-ZZZ';
+
+/**
  * A fake Playwright surface. Real browsers are exercised by the live check in
  * the commit message, not by the suite — CI must stay browser-free.
  */
 function fakeLauncher(opts: { loggedIn?: boolean | (() => boolean); gotoFails?: boolean } = {}) {
-  const state = { closed: false, savedState: { cookies: [{ name: 'session', value: 'abc' }] } };
+  const state = { closed: false, savedState: { cookies: [{ name: 'session', value: COOKIE_SENTINEL }] } };
   const pages: any[] = [];
 
   const page = () => {
@@ -81,7 +92,7 @@ test('a saved session round-trips through the credential store', async () => {
   const { launcher: l2 } = fakeLauncher();
   const s2 = new BrowserSession({ account: 'douyin:me', credentials: c, launcher: l2 });
   await s2.open();
-  assert.deepEqual((l2 as any).seen.storageState.cookies, [{ name: 'session', value: 'abc' }]);
+  assert.deepEqual((l2 as any).seen.storageState.cookies, [{ name: 'session', value: COOKIE_SENTINEL }]);
   await s2.close();
 });
 
@@ -98,7 +109,7 @@ test('login cookies never touch disk in plaintext', async () => {
   for (const f of fs.readdirSync(home)) {
     const contents = fs.readFileSync(path.join(home, f), 'utf8');
     assert.ok(
-      !contents.includes('abc'),
+      !contents.includes(COOKIE_SENTINEL),
       `cookie value found in plaintext in ${f} — a session cookie is full account control`,
     );
   }

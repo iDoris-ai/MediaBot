@@ -15,6 +15,11 @@ export interface Notification {
   body: string;
   /** Deep link back to the console. */
   url?: string;
+  /**
+   * Correlation token (`[mb:…]`) appended verbatim so a reply can be matched
+   * back to the approval it decides. See core/approval-reply.ts.
+   */
+  token?: string;
 }
 
 export interface Notifier {
@@ -48,10 +53,11 @@ export class WebhookNotifier implements Notifier {
         // `text` carries the whole message so Slack/Discord-shaped receivers
         // render something useful without any mapping.
         body: JSON.stringify({
-          text: [n.title, n.body, n.url].filter(Boolean).join('\n'),
+          text: [n.title, n.body, n.url, n.token].filter(Boolean).join('\n'),
           title: n.title,
           body: n.body,
           ...(n.url ? { url: n.url } : {}),
+          ...(n.token ? { token: n.token } : {}),
         }),
         signal: ctl.signal,
       });
@@ -87,8 +93,11 @@ export class TelegramNotifier implements Notifier {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             chat_id: this.opts.chatId,
-            text: [`*${n.title}*`, n.body, n.url].filter(Boolean).join('\n'),
-            parse_mode: 'Markdown',
+            // The token must survive verbatim, so no Markdown parsing here:
+            // an unbalanced `*` or `_` in a draft makes Telegram reject the
+            // whole message, and the notification is how the human finds out
+            // there is anything to review at all.
+            text: [n.title, n.body, n.url, n.token].filter(Boolean).join('\n'),
             disable_web_page_preview: true,
           }),
           signal: ctl.signal,

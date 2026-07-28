@@ -1,5 +1,6 @@
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -44,6 +45,8 @@ export class BilibiliPublisher implements PublisherProvider {
   readonly platform = 'bilibili';
   readonly transport: PublishTransport = 'cli';
   readonly limits = BILIBILI_LIMITS;
+  /** A dynamic is public the moment it lands. */
+  readonly consequence: Consequence = 'irreversible';
 
   private readonly bin: string;
   private readonly runner: CliRunner;

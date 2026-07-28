@@ -152,3 +152,38 @@ test('isLoopback accepts only loopback addresses', () => {
     assert.ok(!isLoopback(a), `${a} must be rejected — the DB holds credentials and queued posts`);
   }
 });
+
+test('the console can grant a standing rule from an approval, and revoke it', async () => {
+  const s = await serve();
+  const grant = { action: 'publish:blog-tech', target: '/repo#src/content/blog', consequence: 'reversible' as const };
+  const first = s.queue.enqueue({ kind: 'publish', refId: 'dv_1', payload, grant });
+
+  const res = await s.post(`/api/approvals/${first.id}/allow`);
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as any;
+  assert.equal(body.rule, 'publish:blog-tech /repo#src/content/blog');
+  assert.equal(body.approval.state, 'approved');
+
+  // The rule now covers the next proposal for the same destination.
+  assert.equal(s.queue.enqueue({ kind: 'publish', refId: 'dv_2', payload, grant }).state, 'approved');
+
+  const { rules } = await s.json('/api/rules');
+  assert.equal(rules.length, 1);
+
+  const revoked = (await (await s.post('/api/rules/revoke', { entry: body.rule })).json()) as any;
+  assert.equal(revoked.revoked, true);
+  assert.equal(s.queue.enqueue({ kind: 'publish', refId: 'dv_3', payload, grant }).state, 'pending');
+  await s.close();
+});
+
+test('the console refuses to grant a rule for an action that cannot have one', async () => {
+  const s = await serve();
+  // No grant context: an irreversible platform, or one that names no target.
+  const appr = s.queue.enqueue({ kind: 'publish', refId: 'dv_1', payload });
+
+  const res = await s.post(`/api/approvals/${appr.id}/allow`);
+  assert.equal(res.status, 500);
+  assert.match(((await res.json()) as any).error, /has to be decided every time/);
+  assert.equal(s.queue.get(appr.id)!.state, 'pending', 'a refused grant must not approve anything');
+  await s.close();
+});

@@ -9,6 +9,8 @@ import type {
 } from '../contracts';
 import { ProviderError } from '../contracts';
 import { ApprovalQueue, type Approval } from './approval';
+import { auditJson, redactText } from './audit';
+import { publishGrant } from './consequence';
 import type { Db } from './db';
 import { backoffMs, idempotencyKey, newId } from './identity';
 
@@ -74,7 +76,7 @@ export class Pipeline {
     );
 
     for (const source of this.providers.sources ?? []) {
-      const runId = this.startRun('source_poll', source.info.id);
+      const runId = this.startRun('source_poll', source.info.id, undefined, query);
       try {
         const items = await source.fetch(query);
         result.fetched += items.length;
@@ -114,7 +116,7 @@ export class Pipeline {
     const composer = this.providers.composer;
     if (!composer) throw new Error('no composer configured');
 
-    const runId = this.startRun('compose', composer.info.id);
+    const runId = this.startRun('compose', composer.info.id, undefined, briefForStorage(brief));
     const createdAt = this.now();
 
     try {
@@ -192,12 +194,14 @@ export class Pipeline {
         continue;
       }
 
+      const grant = publishGrant(publisher, variant);
       out.approvals.push(
         this.approvals.enqueue({
           kind: 'publish',
           refId: variant.id,
           payload: variant,
           scheduledFor: opts.scheduledFor ?? null,
+          ...(grant ? { grant } : {}),
         }),
       );
     }
@@ -217,7 +221,11 @@ export class Pipeline {
     for (const approval of this.approvals.due()) {
       if (approval.kind !== 'publish') continue;
 
-      const runId = this.startRun('publish', undefined, approval.id);
+      const runId = this.startRun('publish', undefined, approval.id, {
+        approvalId: approval.id,
+        scheduledFor: approval.scheduledFor,
+        decidedBy: approval.decidedBy,
+      });
       let variant: DraftVariant;
       try {
         variant = this.approvals.verifyForExecution(approval.id).payload as DraftVariant;
@@ -236,6 +244,17 @@ export class Pipeline {
       }
 
       const accountId = this.ensureAccount(publisher);
+      this.setRunArgs(runId, {
+        approvalId: approval.id,
+        decidedBy: approval.decidedBy,
+        platform: variant.platform,
+        variantId: variant.id,
+        accountId,
+        transport: publisher.transport,
+        title: variant.title,
+        body: variant.body,
+        media: variant.media.map((m) => ({ kind: m.kind, path: m.path })),
+      });
       const scheduledFor = approval.scheduledFor ?? 0;
       const key = idempotencyKey({ accountId, draftVariantId: variant.id, scheduledFor });
       const postId = this.claimPost({ approval, variant, accountId, key, scheduledFor });
@@ -369,18 +388,37 @@ export class Pipeline {
     return id;
   }
 
-  private startRun(kind: string, providerId?: string, refId?: string): string {
+  private startRun(kind: string, providerId?: string, refId?: string, args?: unknown): string {
     const id = newId('run');
     this.db
-      .prepare(`INSERT INTO runs (id, kind, provider_id, ref_id, state, started_at) VALUES (?,?,?,?, 'running', ?)`)
-      .run(id, kind, providerId ?? null, refId ?? null, this.now());
+      .prepare(
+        `INSERT INTO runs (id, kind, provider_id, ref_id, state, args, started_at)
+         VALUES (?,?,?,?, 'running', ?, ?)`,
+      )
+      .run(
+        id,
+        kind,
+        providerId ?? null,
+        refId ?? null,
+        // Never store raw arguments: they carry cookies, tokens and whole
+        // drafts. See src/core/audit.ts.
+        args === undefined ? null : auditJson(args),
+        this.now(),
+      );
     return id;
+  }
+
+  /** Fill in arguments only known after the run started (the resolved variant). */
+  private setRunArgs(id: string, args: unknown): void {
+    this.db.prepare(`UPDATE runs SET args = ? WHERE id = ?`).run(auditJson(args), id);
   }
 
   private finishRun(id: string, state: 'ok' | 'error', detail?: string): void {
     this.db
       .prepare(`UPDATE runs SET state=?, detail=?, finished_at=? WHERE id=?`)
-      .run(state, detail ?? null, this.now(), id);
+      // Provider errors quote their own argv and request URLs, which is exactly
+      // where a token turns up in a log nobody audited.
+      .run(state, detail === undefined ? null : redactText(detail).slice(0, 2000), this.now(), id);
   }
 }
 

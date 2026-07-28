@@ -84,6 +84,38 @@ test('foreign keys reject a post on a non-existent account', () => {
   db.close();
 });
 
+test('an existing v1 database migrates forward without losing rows', () => {
+  const p = tmpDbPath();
+  const first = open(p);
+  first
+    .prepare(`INSERT INTO runs (id, kind, state, started_at) VALUES ('run_old','publish','ok',?)`)
+    .run(Date.now());
+
+  // Rewind to a genuine v1 database — every later artefact removed, not just
+  // the version number, which would leave the migrations trivially satisfied.
+  first.exec(`
+    ALTER TABLE runs DROP COLUMN args;
+    DROP TABLE standing_rules;
+    ALTER TABLE approvals DROP COLUMN grant_entry;
+    ALTER TABLE approvals DROP COLUMN grant_consequence;
+  `);
+  first.pragma('user_version = 1');
+  first.close();
+
+  const second = open(p);
+  const runCols = new Set((second.pragma('table_info(runs)') as any[]).map((c) => c.name));
+  const apprCols = new Set((second.pragma('table_info(approvals)') as any[]).map((c) => c.name));
+  assert.ok(runCols.has('args'));
+  assert.ok(apprCols.has('grant_entry') && apprCols.has('grant_consequence'));
+  assert.equal(
+    (second.prepare(`SELECT COUNT(*) c FROM sqlite_master WHERE name='standing_rules'`).get() as any).c,
+    1,
+  );
+  assert.equal((second.prepare(`SELECT COUNT(*) c FROM runs`).get() as any).c, 1);
+  assert.equal(second.pragma('user_version', { simple: true }), SCHEMA_VERSION);
+  second.close();
+});
+
 test('source_items primary key makes repeated polling idempotent', () => {
   const db = open(tmpDbPath());
   const insert = db.prepare(

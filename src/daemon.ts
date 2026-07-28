@@ -12,6 +12,10 @@ import { buildCollectors, localCollectors } from './core/metrics';
 import { buildNotifiers, notifyAll } from './providers/notify';
 import { CredentialStore } from './core/credentials';
 import { generateBriefing } from './core/briefing';
+import { replyToken } from './core/approval-reply';
+import { wireReplyApproval } from './providers/telegram/approval-poller';
+import { TelegramEngagement } from './providers/engagement/telegram';
+import type { Approval } from './core/approval';
 
 /**
  * The long-running process.
@@ -85,10 +89,43 @@ async function main(): Promise<void> {
   const consoleUrl = `http://127.0.0.1:${port}`;
 
   /** Ping whoever is on duty. Never lets a failed ping break the caller. */
-  const ping = async (title: string, body: string) => {
+  const ping = async (title: string, body: string, token?: string) => {
     if (!notifiers.length) return;
-    const res = await notifyAll(notifiers, { title, body, url: consoleUrl });
+    const res = await notifyAll(notifiers, {
+      title,
+      body,
+      url: consoleUrl,
+      ...(token ? { token } : {}),
+    });
     for (const f of res.failed) log(`notify ${f.id} failed: ${f.error}`, 'warn');
+  };
+
+  /**
+   * Push each queued item separately so it can be decided by replying.
+   *
+   * A single "3 条待审批" line cannot be answered — there is nothing to say yes
+   * to. Past a small batch the individual pings become the noise that gets the
+   * bot muted, so the tail is summarised and sent to the console instead.
+   */
+  const maxPerBatch = config.notify?.maxPerBatch ?? 5;
+  const pingApprovals = async (heading: string, approvals: Approval[]) => {
+    const pending = approvals.filter((a) => a.state === 'pending');
+    if (!pending.length) return;
+
+    for (const a of pending.slice(0, maxPerBatch)) {
+      const p = a.payload as any;
+      const platform = p?.platform ?? a.kind;
+      const preview = String(p?.title ? `${p.title}\n${p.body ?? ''}` : (p?.body ?? '')).slice(0, 300);
+      await ping(`${heading}｜${platform}`, `${preview}\n\n回复「批准」或「拒绝」即可`, replyToken(a.id));
+    }
+    if (pending.length > maxPerBatch) {
+      await ping(heading, `还有 ${pending.length - maxPerBatch} 条待审，去控制台看`);
+    }
+  };
+
+  const pingApprovalIds = async (heading: string, ids: string[]) => {
+    const items = ids.map((id) => pipeline.queue.get(id)).filter((a): a is Approval => !!a);
+    await pingApprovals(heading, items);
   };
 
   scheduler.add({
@@ -110,12 +147,7 @@ async function main(): Promise<void> {
       const proposal = await pipeline.propose(variants);
       log(`queued ${proposal.approvals.length} for approval`);
       for (const s of proposal.skipped) log(`  skipped ${s.platform}: ${s.reason}`, 'warn');
-      if (proposal.approvals.length) {
-        await ping(
-          `${proposal.approvals.length} 条草稿待审批`,
-          proposal.approvals.map((a) => (a.payload as any)?.platform ?? a.kind).join(', '),
-        );
-      }
+      await pingApprovals('草稿待审批', proposal.approvals);
     },
   });
 
@@ -158,6 +190,51 @@ async function main(): Promise<void> {
   });
 
   const engagement = buildEngagement(config);
+
+  /**
+   * Approving from the phone, by replying to the notification.
+   *
+   * Wiring is a decision rather than a switch because `getUpdates` is a
+   * single-consumer stream: if the group-reply provider is configured it
+   * already owns the stream and this attaches to it; only otherwise does a
+   * poller start. Two consumers would silently steal each other's messages.
+   */
+  const telegramEngagement = engagement.find(
+    (p): p is TelegramEngagement => p instanceof TelegramEngagement,
+  );
+  const replyWiring = wireReplyApproval({
+    queue: pipeline.queue,
+    config: {
+      ...(notifyConfig.telegramOwnerId ? { ownerId: notifyConfig.telegramOwnerId } : {}),
+      ...(config.telegram?.token ?? notifyConfig.telegramBotToken
+        ? { token: (config.telegram?.token ?? notifyConfig.telegramBotToken)! }
+        : {}),
+    },
+    ...(telegramEngagement ? { engagement: telegramEngagement } : {}),
+    onOutcome: (outcome) => {
+      if (outcome.status === 'decided') {
+        log(`reply-approval: ${outcome.decision} ${outcome.approval.id}`);
+        // Publish on the next `publish` tick rather than from inside a message
+        // handler — executing here would run publishes on the poll's stack,
+        // where a failure would take the poller down with it.
+      } else if (outcome.status === 'unknown') {
+        log(`reply-approval: no unique approval for [mb:${outcome.idFragment}]`, 'warn');
+      }
+    },
+  });
+
+  if (replyWiring.mode === 'polling') {
+    scheduler.add({
+      name: 'approvals',
+      // Short: this is a human waiting for their reply to take effect.
+      cron: '*/2 * * * *',
+      run: async () => {
+        const outcomes = await replyWiring.poller.poll();
+        if (outcomes.some((o) => o.status === 'decided')) await pipeline.executeDue();
+      },
+    });
+  }
+
   if (engagement.length) {
     const runner = new EngagementRunner(db, {
       providers: engagement,
@@ -177,7 +254,7 @@ async function main(): Promise<void> {
           const drafted = await runner.draftReplies();
           if (drafted.drafted) {
             log(`engage: ${drafted.drafted} replies awaiting approval`);
-            await ping(`${drafted.drafted} 条回复待审批`, '评论回复已起草');
+            await pingApprovalIds('回复待审批', drafted.queued);
           }
         }
 
@@ -225,7 +302,7 @@ async function main(): Promise<void> {
         );
         if (res.queued.length) {
           log(`outreach: ${res.queued.length} comments awaiting approval`);
-          await ping(`${res.queued.length} 条引流评论待审批`, '在他人帖子下的评论已起草');
+          await pingApprovalIds('引流评论待审批', res.queued);
         }
       },
     });

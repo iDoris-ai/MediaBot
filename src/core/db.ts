@@ -162,6 +162,34 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_runs_started ON runs(started_at DESC);
     `,
   },
+  {
+    // T9.3 — record what a run was actually called with. Always written through
+    // `sanitizeArgs`; see src/core/audit.ts for why this column is not raw.
+    version: 2,
+    up: `ALTER TABLE runs ADD COLUMN args TEXT;`,
+  },
+  {
+    // T9.2 — standing approvals, bound to an exact target. See
+    // src/core/consequence.ts for why the target is part of the key.
+    version: 3,
+    up: `
+      CREATE TABLE standing_rules (
+        entry       TEXT PRIMARY KEY,   -- "<action> <target>"
+        action      TEXT    NOT NULL,
+        target      TEXT    NOT NULL,
+        consequence TEXT    NOT NULL,   -- as classified when granted
+        created_by  TEXT,
+        created_at  INTEGER NOT NULL
+      );
+
+      -- The rule this approval could be (or was) covered by. Kept on the row so
+      -- the console can offer the grant, and so history shows which rule acted.
+      -- The consequence rides along because the grant must be recorded with the
+      -- classification the provider declared, never one a caller supplied.
+      ALTER TABLE approvals ADD COLUMN grant_entry TEXT;
+      ALTER TABLE approvals ADD COLUMN grant_consequence TEXT;
+    `,
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
@@ -207,4 +235,5 @@ export const TABLES = [
   'posts',
   'comments',
   'runs',
+  'standing_rules',
 ] as const;

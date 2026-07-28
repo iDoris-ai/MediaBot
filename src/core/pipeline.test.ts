@@ -218,3 +218,94 @@ test('every stage is recorded in runs', async () => {
   for (const k of ['source_poll', 'compose', 'publish']) assert.ok(kinds.includes(k), `missing run kind ${k}`);
   assert.equal((db.prepare(`SELECT COUNT(*) c FROM runs WHERE state='running'`).get() as any).c, 0);
 });
+
+test('clearing the schedule on approval publishes a parked item immediately (--now)', async () => {
+  let clock = Date.UTC(2026, 6, 1);
+  const db = open(':memory:');
+  const pipeline = new Pipeline(
+    db,
+    {
+      composer: new ClaudeComposer({ runner: async () => ({ text: COMPOSED, transcript: '' }) }),
+      publishers: [new DryRunPublisher({ outDir: outDir() })],
+    },
+    () => clock,
+  );
+
+  const { variants } = await pipeline.compose({ ...brief, sources: [] });
+  const { approvals } = await pipeline.propose(variants, { scheduledFor: new Date(clock + 86_400_000) });
+
+  // Approved as scheduled: not due yet.
+  pipeline.queue.approve(approvals[0]!.id);
+  assert.equal((await pipeline.executeDue()).published.length, 0);
+
+  // Re-approving with scheduledFor: null is what `approve --now` does; the item
+  // must go out on this tick even though its original slot is a day away.
+  // (approve() only runs on pending items, so reset for the test.)
+  db.prepare(`UPDATE approvals SET state='pending' WHERE id=?`).run(approvals[0]!.id);
+  pipeline.queue.approve(approvals[0]!.id, { scheduledFor: null });
+  assert.equal((await pipeline.executeDue()).published.length, 1);
+});
+
+test('a standing rule carries a proposal straight to approved', async () => {
+  const { db, pipeline, dir } = build();
+  const target = path.resolve(dir, 'dryrun');
+  pipeline.queue.standingRules.grant({
+    action: 'publish:dryrun',
+    target,
+    consequence: 'local',
+  });
+
+  const { variants } = await pipeline.compose({ ...brief, sources: [] });
+  const { approvals } = await pipeline.propose(variants);
+
+  assert.equal(approvals[0]!.state, 'approved');
+  assert.equal(approvals[0]!.decidedBy, `rule:publish:dryrun ${target}`);
+  assert.equal((await pipeline.executeDue()).published.length, 1);
+  assert.equal((db.prepare(`SELECT COUNT(*) c FROM approvals WHERE state='pending'`).get() as any).c, 0);
+});
+
+test('proposals stay pending when the rule names a different target', async () => {
+  const { pipeline } = build();
+  pipeline.queue.standingRules.grant({
+    action: 'publish:dryrun',
+    target: '/somewhere/else',
+    consequence: 'local',
+  });
+
+  const { variants } = await pipeline.compose({ ...brief, sources: [] });
+  const { approvals } = await pipeline.propose(variants);
+  assert.equal(approvals[0]!.state, 'pending');
+});
+
+test('run arguments are recorded, but sanitized', async () => {
+  const { db, pipeline } = build();
+  await pipeline.runOnce(brief, { autoApprove: true, dryRun: true });
+
+  const publish = db.prepare(`SELECT args FROM runs WHERE kind='publish'`).get() as any;
+  const args = JSON.parse(publish.args);
+  assert.equal(args.platform, 'dryrun');
+  assert.ok(args.variantId, 'the run must name what it published');
+  // The body lives in draft_variants; the audit row only needs to identify it.
+  assert.match(args.body, /\[13 chars\]$/);
+});
+
+test('a provider error mentioning a token is redacted before it reaches runs', async () => {
+  const db = open(':memory:');
+  const publisher = new DryRunPublisher({ outDir: outDir() });
+  publisher.publish = async () => {
+    throw new ProviderError('xhs --token=super-secret-abc rejected the post', 'rejected', false);
+  };
+  const pipeline = new Pipeline(db, {
+    composer: new ClaudeComposer({ runner: async () => ({ text: COMPOSED, transcript: '' }) }),
+    publishers: [publisher],
+  });
+
+  const { variants } = await pipeline.compose({ ...brief, sources: [] });
+  const { approvals } = await pipeline.propose(variants);
+  pipeline.queue.approve(approvals[0]!.id);
+  await pipeline.executeDue();
+
+  const detail = (db.prepare(`SELECT detail FROM runs WHERE kind='publish'`).get() as any).detail;
+  assert.ok(!detail.includes('super-secret-abc'), `token leaked into runs.detail: ${detail}`);
+  assert.match(detail, /--token=\[redacted\]/);
+});

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -85,6 +86,12 @@ export class BlogPublisher implements PublisherProvider {
     maxTitleLength: 200,
     supportsScheduling: false,
   };
+  /**
+   * The only publisher that is genuinely undoable: a wrong post is one
+   * `git revert` away, which is why this is the one channel worth granting a
+   * standing rule for.
+   */
+  readonly consequence: Consequence = 'reversible';
 
   private readonly repo: string;
   private readonly contentDir: string;
@@ -112,6 +119,17 @@ export class BlogPublisher implements PublisherProvider {
 
   private get contentPath(): string {
     return path.join(this.repo, this.contentDir);
+  }
+
+  /**
+   * The repository and collection this writes into.
+   *
+   * Deliberately the resolved paths rather than `this.platform`: a rule granted
+   * for one blog must not survive the config being repointed at another
+   * repository under the same platform name.
+   */
+  targetFor(): string {
+    return `${path.resolve(this.repo)}#${this.contentDir}`;
   }
 
   async checkAuth(): Promise<AuthState> {

@@ -78,6 +78,14 @@ export interface MediaBotConfig {
     webhookHeaders?: Record<string, string>;
     telegramBotToken?: string;
     telegramChatId?: string;
+    /**
+     * Numeric Telegram user id allowed to approve by replying. Without it,
+     * reply-approval stays off — anyone in the chat could otherwise publish
+     * under your name. Find it by messaging @userinfobot.
+     */
+    telegramOwnerId?: string;
+    /** How many drafts to push individually before summarising. Default 5. */
+    maxPerBatch?: number;
   };
   port?: number;
   schedule?: { ingest?: string; publish?: string; monitor?: string; briefing?: string };

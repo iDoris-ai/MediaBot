@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -60,6 +61,8 @@ export class XiaohongshuPublisher implements PublisherProvider {
   readonly platform = 'xiaohongshu';
   readonly transport: PublishTransport = 'cli';
   readonly limits = XHS_LIMITS;
+  /** A published note cannot be unsent; edits are limited and visible. */
+  readonly consequence: Consequence = 'irreversible';
 
   private readonly bin: string;
   private readonly runner: CliRunner;

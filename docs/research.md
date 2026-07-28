@@ -101,4 +101,44 @@ MediaBot (Apache-2.0)
 
 ## 七、参考仓库本地路径
 
-克隆在本仓库 `research/refs/`（已加入 `.gitignore`，不随仓库提交，仅供本地查阅源码）。共 21 个仓库，约 586MB。
+克隆在本仓库 `research/refs/`（已加入 `.gitignore`，不随仓库提交，仅供本地查阅源码）。共 22 个仓库（含 §八 追加的 openworker），约 586MB。
+
+## 八、追加调研：andrewyng/openworker（2026-07-25）
+
+来源：blog.mushroom.cv 文章《Andrew Ng 的 OpenWorker》。**MIT License（Copyright 2024 Andrew Ng）——可以直接改编代码，只需保留版权声明**，比本文档里那批 AGPL/无 license 的仓库宽松得多。技术栈 Tauri 2 + React 外壳 + 本地 Python FastAPI agent server（`coworker/` 约 32k 行），所以"直接抄"实际是照着重写成 TS，不是复制文件。
+
+它和 MediaBot 不是竞品：OpenWorker 是通用桌面 coworker（交付物导向：给你一份成稿、发一条 Slack、改一个日程），MediaBot 是单一负载（媒体运营）。**重合点恰好是最难做对的那部分——人机边界**，而它在这一块比 MediaBot 细。
+
+### 8.1 值得借鉴（按价值排序）
+
+1. **分级风险模型 + 权限模式（`coworker/risk.py`、`permissions.py`）**
+   每个工具调用先归入 `read` / `write_local` / `exec` / `external` 四类，再由 5 档模式（discuss / plan / interactive / auto / custom）裁决 allow / deny / ask。关键设计是**风险是工具声明的属性，由单一 `classify()` 读取**，而不是散落在各处的 `if tool in WRITE_TOOLS`（它的注释明确说这是重构掉的旧写法）。
+   对 MediaBot：目前是二元的——对外动作全需审批，其余不管。但实际上已经有隐含分级（blog 可 `git revert`、公众号只建草稿、小红书不可撤回），这些判断散在各 provider 里。CLAUDE.md 写的"审批不可全局关闭，可按平台放宽"**至今没有落地机制**，这就是那个机制该有的形状。
+
+2. **绑定精确目标的常驻授权（`permissions.py::standing_rule_candidate`、`automation/models.py::grant_entries`）**
+   "以后都允许"只能绑定到**一个确切目标**（`"send_message #general"`），且只对 `external` 风险开放——`exec` 永远问，写本地文件永远问。规则存在自动化任务记录上，**删任务连带撤销**；`grant_entries` 是 fail-closed 的白名单校验，只有声明了 target 参数的工具才可能被授权。
+   对 MediaBot：这才是"按平台放宽"的正确粒度——不是放宽"小红书发布"，是放宽"发布到 blog-tech 这个仓库"。前者不可撤回，后者 `git revert` 就完事。
+
+3. **收件箱绑定 + 回复即审批（`inbox_routing.py`）**
+   审批项投递到 Slack/Telegram 时把 item id 嵌进消息（`[ow:<id>]`），人的回复按 id 关联回来，解析 allow / deny / 自由文本答案。in-app 永远是记录源，IM 只是同一批 item 的另一个传输通道。
+   对 MediaBot：**最直接可用的一条**。现在推送只是通知（"3 条草稿待审批"），人还得去开 localhost:7788；而 Telegram 侧收发能力已经有了。这直击 acceptance.md §四.3"每天 ≤30 分钟且全花在审阅上"。
+   ⚠️ **安全前提**：群里任何人回复都能批准是不可接受的，必须绑定到所有者的 user id，且这条要写成不变量而不是配置。
+
+4. **审计参数脱敏（`audit.py::_sanitize_args`）**
+   token/secret/password/api_key/access_token 一律 `[redacted]`，body/content/html 截断，`browser_type` 的 `text` 参数当输入内容脱敏。
+   对 MediaBot：`runs` 表现在只存一个 `detail` 字符串。**将来一旦开始记 provider 调用参数，必须先有这套脱敏**，否则审计日志本身变成凭证泄露面。这段可以直接改编（MIT）。
+
+5. **"人在不在"与"授权上限"分离（`unattended.py`）**
+   unattended 只改**去哪儿找人**（转收件箱、挂起等答复），**不改自治天花板**——那是权限模式的事。
+   对 MediaBot：daemon 天生就是无人值守的，正好用这个区分说清一件事：定时跑 ≠ 提高授权，approve 永远是人的动作。这是概念澄清，不是代码。
+
+6. **进程内假服务器（`coworker/testing/fake_slack/`）** —— Starlette 起一个真的假 Slack，让真实 adapter 端到端跑，不碰网络不要 token。MediaBot 靠注入 `CliRunner` 已经够用，但 Telegram Bot API 这类 HTTP 通道用假服务器测更接近真实。中等价值。
+
+### 8.2 MediaBot 反而领先的两处（别为了统一而退化）
+
+- **审批快照 + 执行前哈希校验**：OpenWorker 的审批是一次 turn 内的内存对象，没有"批准后内容被改"的检测（`hashlib` 只用在 PKCE、PDF 缓存、session id 哈希上）。MediaBot 的 `payload_hash` 更强。
+- **幂等键**：OpenWorker 没有等价物。它的动作重放代价低（重发一条 Slack）；MediaBot 重放一条小红书不可撤回。
+
+### 8.3 一句话判断
+
+**它的风险分级和目标绑定授权比我们细，我们的执行前完整性和幂等比它硬。** 借它的授权粒度，别动我们的执行保证。

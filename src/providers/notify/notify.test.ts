@@ -68,7 +68,10 @@ test('telegram targets the bot API with the chat id', async () => {
 
   assert.match(calls[0]!.url, /api\.telegram\.org\/botBOT:TOKEN\/sendMessage/);
   assert.equal(calls[0]!.body.chat_id, '12345');
-  assert.match(calls[0]!.body.text, /\*3 条待审批\*/);
+  // Plain text, not Markdown: a draft containing a lone `*` or `_` would make
+  // Telegram reject the whole message, and this notification is the only way
+  // the human learns there is something waiting.
+  assert.match(calls[0]!.body.text, /^3 条待审批\n/);
 });
 
 test('telegram reports an API-level failure even on HTTP 200', async () => {
@@ -138,4 +141,22 @@ test('buildNotifiers reads environment variables', () => {
     if (prev === undefined) delete process.env.MEDIABOT_WEBHOOK_URL;
     else process.env.MEDIABOT_WEBHOOK_URL = prev;
   }
+});
+
+test('the correlation token is sent verbatim so a reply can be matched back', async () => {
+  const sent: any[] = [];
+  const fetchImpl = (async (_url: string, init: any) => {
+    sent.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  await new TelegramNotifier({ botToken: 't', chatId: '1', fetchImpl }).send({
+    title: '草稿待审批｜xiaohongshu',
+    // Markdown-hostile on purpose: drafts contain stray * and _ all the time.
+    body: '标题 *不平衡 _的 markdown',
+    token: '[mb:appr_abc123]',
+  });
+
+  assert.match(sent[0].text, /\[mb:appr_abc123\]$/);
+  assert.equal(sent[0].parse_mode, undefined, 'Markdown parsing would let a draft break the message');
 });

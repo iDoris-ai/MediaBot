@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -43,6 +44,8 @@ export class DryRunPublisher implements PublisherProvider {
   readonly platform: string;
   readonly transport: PublishTransport;
   readonly limits: PlatformLimits;
+  /** Writes local files and nothing else — the whole point of this provider. */
+  readonly consequence: Consequence = 'local';
 
   private readonly outDir: string;
 
@@ -56,6 +59,11 @@ export class DryRunPublisher implements PublisherProvider {
     this.transport = opts.transport ?? 'api';
     this.limits = { ...DEFAULT_LIMITS, ...opts.limits };
     this.outDir = opts.outDir ?? path.join(process.cwd(), 'out');
+  }
+
+  /** The directory the output lands in. */
+  targetFor(): string {
+    return path.resolve(this.outDir, this.platform);
   }
 
   async checkAuth(): Promise<AuthState> {

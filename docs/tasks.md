@@ -359,3 +359,63 @@ M0 骨架契约
 ### T8.7 提交 PR `[x]`
 **依赖**：T8.1–T8.6 全绿
 **交付物**：feature 分支 → PR 到 main，说明本轮交付、未完成项、以及需要用户实测的部分
+
+---
+
+## M9 — 借鉴 openworker 的人机边界（2026-07-25 追加）
+
+来源：`research/refs/openworker`（MIT，Andrew Ng）。调研结论见 [`research.md`](research.md) §八。
+只借它的**授权粒度**，不动我们已有的执行前哈希校验与幂等键——那两条它没有，见 §8.2。
+
+### T9.3 审计参数脱敏 `[x]`
+**依赖**：无
+**交付物**：`src/core/audit.ts` —— `sanitizeArgs()`（token/secret/password/api_key/cookie 等键一律 `[redacted]`，body/content/html 类键截断，数组/对象限长）+ `sanitizeText()`（错误消息里的 `token=…` / `Bearer …` 脱敏）；migration v2 给 `runs` 加 `args` 列；pipeline 在 `startRun` 记录脱敏后的调用参数
+**验收**：单测——给定含 token 的参数，输出不含原值；长正文被截断；`runs.args` 落库且可读回；重复 open() 迁移幂等
+**理由**：`runs` 现在只有一个 `detail` 字符串。一旦开始记 provider 调用参数，没有脱敏层审计日志本身就成了凭证泄露面
+**借鉴**：`coworker/audit.py::_sanitize_args`
+**验收结果**：✅ 452 测试全绿
+**写测试时发现一个真实漏洞**：`Authorization: Bearer eyJ…` 会被 key=value 规则当成「键 Authorization、值 Bearer」，把 Bearer 换成 `[redacted]` 后**把 JWT 原样留在日志里**。修法是让值的候选里显式包含 `Bearer <token>` 整体，排在裸词之前——脱敏规则最危险的失败不是漏掉一整类，是「看起来生效了」
+
+### T9.2 后果分级 + 目标绑定常驻授权 `[x]`
+**依赖**：T9.3（共用 audit 记录）
+**交付物**：
+- `src/contracts/publisher.ts` 增 `consequence`（`local` / `reversible` / `draft_only` / `irreversible`）与可选 `targetFor(variant)`
+- `src/core/consequence.ts` —— 单一 `classify()` 与「哪些后果等级可被常驻授权」的唯一出处
+- `standing_rules` 表（migration v2）+ `StandingRules` store（授予 / 列出 / 撤销）
+- `ApprovalQueue.enqueue` 接受 `grant`，命中规则时立即批准并把 `decided_by` 记成 `rule:<action> <target>`
+- CLI `mediabot allow <action> <target>` / `rules` / `revoke <entry>`
+**验收**：单测——
+1. `irreversible` 平台**即使有同名规则也不会被自动批准**（fail-closed，有测试断言）
+2. 规则必须绑定精确 target；provider 不声明 `targetFor` 则不可授权
+3. 命中规则的审批项仍留下完整行（pending → approved），`decided_by` 指明是哪条规则
+4. 撤销后立即恢复人工审批
+**理由**：CLAUDE.md 写的「审批可按平台放宽」一直没有落地机制。openworker 给出的粒度比「按平台」对——该放宽的是「发到 blog-tech 这个仓库」（`git revert` 可撤回），不是「小红书发布」（不可撤回）
+**借鉴**：`coworker/permissions.py::standing_rule_candidate`、`coworker/automation/models.py::grant_entries`
+**验收结果**：✅ 全部 4 条通过，其中「手改数据库塞进一条 irreversible 规则」也被拒绝（分级在读取处判定，不只在写入处）
+**目标绑定的落地形状**：blog = `<repo 绝对路径>#<contentDir>`、公众号 = `appId`、dryrun = 输出目录。都不是平台名——平台名可以被 config 重新指向别的仓库，规则会跟着漂移
+**授权来源**：`consequence` 只从 provider 实例读，CLI 参数只提供 action/target。否则 `mediabot allow` 就成了「自称可撤回即可绕过」的后门
+**契约一致性检查同步加了两条**：consequence 必须是已知值；`targetFor` 多次调用必须稳定、且传不传 variant 结果一致——目标随内容变化的话，按一条草稿授的权会作用到人没看过的目的地
+
+### T9.1 Telegram 回复即审批 `[x]`
+**依赖**：T9.2（消息里要显示后果等级）
+**交付物**：
+- 通知消息嵌入 `[mb:<approvalId 前缀>]`，人直接回复「批准 / 拒绝」即生效
+- `src/core/approval-reply.ts` —— token 解析 + 决定词解析（中英文 + 👍/✅/👎/❌），只认 approve/reject，自由文本不当编辑（改文案仍走控制台）
+- **授权绑定**：只接受 `notify.telegramOwnerId` 那个 user id 的回复；未配置则整功能关闭
+- 共用 `TelegramEngagement` 的 `getUpdates` 流（`onMessage` 钩子），未配置群互动时才起独立轮询
+**验收**：单测——
+1. 非 owner 的回复（包括群里其他人、bot）**不产生任何状态变更**，有测试断言
+2. 未配置 owner 时功能完全关闭
+3. 已 decided 的项重复回复不报错也不改状态
+4. 同一个 token 被两条消息回复时只有第一条生效
+5. 不存在两个 `getUpdates` 消费者（offset 互抢会永久丢更新）
+**理由**：现在推送只是通知，人还得开 localhost:7788。直击 acceptance.md §四.3「每天 ≤30 分钟且全花在审阅上」
+**借鉴**：`coworker/inbox_routing.py`（`[ow:<id>]` 关联回执）
+**验收结果**：✅ 5 条全部有测试覆盖
+**最需要注意的是第 5 条**：`getUpdates` 是**单消费者流**——带 offset 拉取即等于 ack，两个轮询器不会各看一遍，而是**互相随机偷消息且永久丢失**。群聊问题被偷走只是漏答，审批回复被偷走是「人以为批了、其实没发」。所以 `wireReplyApproval()` 把「谁拥有这条流」变成一个可测的决策：群互动 provider 在就挂钩子（`onMessage`），不在才起独立轮询器，永远不并存
+**其他实现取舍**：
+- 钩子在过滤之前调用，且**吞掉自身异常**——这些 update 已经被 ack 了，钩子抛异常会把它们一起丢掉
+- 通知改成**一条草稿一条消息**（超过 5 条转摘要）——「3 条待审批」是没法回复的，没有东西可以对它说「批准」
+- Telegram 通知**去掉了 Markdown parse_mode**：草稿正文里出现落单的 `*` 或 `_` 会让整条消息发送失败，而这条消息正是人知道「有东西待审」的唯一途径
+- 前缀冲突时**拒绝而不是猜**：token 是 approval id 的前 12 位，命中多条就当作未知
+- 「拒绝」优先于「批准」：`别发 ok` 这种改主意的句子，安全读法是不发

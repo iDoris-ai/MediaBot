@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type {
   AuthState,
+  Consequence,
   DraftVariant,
   PlatformLimits,
   ProviderInfo,
@@ -62,6 +63,12 @@ export class WeChatMpPublisher implements PublisherProvider {
   readonly platform = 'wechat-mp';
   readonly transport: PublishTransport = 'api';
   readonly limits = WECHAT_MP_LIMITS;
+  /**
+   * Only ever creates a draft — the irreversible step (mass-send, which cannot
+   * be recalled and is limited to a handful per month) stays a human action in
+   * WeChat's own console.
+   */
+  readonly consequence: Consequence = 'draft_only';
 
   private readonly appId: string | undefined;
   private readonly appSecret: string | undefined;
@@ -79,6 +86,11 @@ export class WeChatMpPublisher implements PublisherProvider {
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
     this.tokenTtlMs = opts.tokenTtlMs ?? 90 * 60_000;
     this.now = opts.now ?? Date.now;
+  }
+
+  /** The official account itself — a rule must not follow a change of appId. */
+  targetFor(): string | undefined {
+    return this.appId;
   }
 
   async checkAuth(): Promise<AuthState> {
